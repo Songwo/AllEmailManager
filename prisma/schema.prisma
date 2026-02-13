@@ -1,0 +1,130 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  password      String?
+  emailAccounts EmailAccount[]
+  pushChannels  PushChannel[]
+  filterRules   FilterRule[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model EmailAccount {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email         String
+  provider      String    // gmail, outlook, qq, etc
+  imapHost      String
+  imapPort      Int
+  smtpHost      String?
+  smtpPort      Int?
+  encryptedPassword String
+  isActive      Boolean   @default(true)
+  lastSyncAt    DateTime?
+  status        String    @default("connected") // connected, disconnected, error
+  errorMessage  String?
+  emails        Email[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([userId, email])
+}
+
+model Email {
+  id              String       @id @default(cuid())
+  emailAccountId  String
+  emailAccount    EmailAccount @relation(fields: [emailAccountId], references: [id], onDelete: Cascade)
+  messageId       String       @unique
+  from            String
+  to              String[]
+  subject         String
+  textContent     String?      @db.Text
+  htmlContent     String?      @db.Text
+  receivedAt      DateTime
+  isRead          Boolean      @default(false)
+  hasAttachments  Boolean      @default(false)
+  attachments     Json?
+  headers         Json?
+  pushLogs        PushLog[]
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([emailAccountId, receivedAt])
+  @@index([isRead])
+}
+
+model PushChannel {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type          String    // wechat, feishu, telegram
+  name          String
+  config        Json      // webhook url, bot token, etc
+  isActive      Boolean   @default(true)
+  cardTemplate  String?   @db.Text
+  pushLogs      PushLog[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model FilterRule {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name          String
+  isActive      Boolean   @default(true)
+  conditions    Json      // {sender: [], subject: [], keywords: []}
+  actions       Json      // {pushChannels: [], markAsRead: false, delete: false}
+  priority      Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model PushLog {
+  id            String       @id @default(cuid())
+  emailId       String
+  email         Email        @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  channelId     String
+  channel       PushChannel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  status        String       // success, failed, pending
+  errorMessage  String?
+  pushedAt      DateTime     @default(now())
+
+  @@index([emailId])
+  @@index([channelId])
+}
+
+model RateLimitLog {
+  id            String    @id @default(cuid())
+  channelId     String
+  count         Int       @default(1)
+  windowStart   DateTime
+  createdAt     DateTime  @default(now())
+
+  @@unique([channelId, windowStart])
+}
+
+model SystemAlert {
+  id            String    @id @default(cuid())
+  type          String    // email_disconnect, push_failed, rate_limit
+  severity      String    // info, warning, error
+  message       String
+  metadata      Json?
+  isResolved    Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  resolvedAt    DateTime?
+}
