@@ -17,10 +17,10 @@ interface EmailItem {
   id: string
   fromAddress: string
   subject: string
-  textContent: string | null
+  body: string | null
+  bodyHtml: string | null
   receivedAt: string
   isRead: boolean
-  hasAttachments: boolean
   emailAccount: {
     email: string
     provider: string
@@ -39,47 +39,56 @@ export default function Dashboard() {
   const [emails, setEmails] = useState<EmailItem[]>([])
   const [loading, setLoading] = useState(true)
 
+  // Fetch data function
+  const fetchData = async () => {
+    const token = localStorage.getItem('token')
+    if (!token) return
+
+    try {
+      const headers = { 'Authorization': `Bearer ${token}` }
+
+      const [analyticsRes, emailsRes] = await Promise.all([
+        fetch('/api/analytics', { headers }),
+        fetch('/api/emails?limit=10', { headers })
+      ])
+
+      if (analyticsRes.ok) {
+        const analytics: AnalyticsData = await analyticsRes.json()
+        setStats({
+          totalEmails: analytics.overview.totalEmails,
+          unread: analytics.overview.unreadEmails,
+          todayReceived: analytics.overview.todayEmails,
+          activeAccounts: analytics.overview.activeAccounts
+        })
+      }
+
+      if (emailsRes.ok) {
+        const emailData = await emailsRes.json()
+        setEmails(emailData.emails || [])
+      }
+    } catch (error) {
+      console.error('Failed to fetch dashboard data:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   useEffect(() => {
     const userData = localStorage.getItem('user')
     if (userData) {
       setUser(JSON.parse(userData))
     }
 
-    const token = localStorage.getItem('token')
-    if (!token) return
-
-    // Fetch analytics
-    const fetchData = async () => {
-      try {
-        const headers = { 'Authorization': `Bearer ${token}` }
-
-        const [analyticsRes, emailsRes] = await Promise.all([
-          fetch('/api/analytics', { headers }),
-          fetch('/api/emails?limit=10', { headers })
-        ])
-
-        if (analyticsRes.ok) {
-          const analytics: AnalyticsData = await analyticsRes.json()
-          setStats({
-            totalEmails: analytics.overview.totalEmails,
-            unread: analytics.overview.unreadEmails,
-            todayReceived: analytics.overview.todayEmails,
-            activeAccounts: analytics.overview.activeAccounts
-          })
-        }
-
-        if (emailsRes.ok) {
-          const emailData = await emailsRes.json()
-          setEmails(emailData.emails || [])
-        }
-      } catch (error) {
-        console.error('Failed to fetch dashboard data:', error)
-      } finally {
-        setLoading(false)
-      }
-    }
-
+    // Initial fetch
     fetchData()
+
+    // Set up polling - refresh every 30 seconds
+    const pollInterval = setInterval(() => {
+      fetchData()
+    }, 30000)
+
+    // Cleanup on unmount
+    return () => clearInterval(pollInterval)
   }, [])
 
   const formatTime = (dateStr: string) => {
@@ -199,17 +208,12 @@ export default function Dashboard() {
                       <span className="text-xs text-muted-foreground hidden sm:inline-block">
                         &lt;{email.emailAccount?.email}&gt;
                       </span>
-                      {email.hasAttachments && (
-                        <span className="text-[10px] px-1.5 py-0.5 bg-secondary text-secondary-foreground rounded border border-border">
-                          附件
-                        </span>
-                      )}
                     </div>
                     <div className={`text-sm mb-1 truncate ${!email.isRead ? 'font-medium text-foreground' : 'text-muted-foreground'}`}>
                       {email.subject}
                     </div>
                     <div className="text-xs text-muted-foreground truncate group-hover:text-foreground/80 transition-colors">
-                      {email.textContent?.substring(0, 100) || '(无内容预览)'}
+                      {email.body?.substring(0, 100) || '(无内容预览)'}
                     </div>
                   </div>
 

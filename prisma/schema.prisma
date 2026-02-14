@@ -69,11 +69,10 @@ model Email {
   fromAddress    String
   toAddresses    String
   subject        String
-  textContent    String?
-  htmlContent    String?
+  body           String?
+  bodyHtml       String?
   receivedAt     DateTime
   isRead         Boolean      @default(false)
-  hasAttachments Boolean      @default(false)
   attachments    String?
   headers        String?
   pushLogs       PushLog[]

@@ -139,6 +139,10 @@ export class EmailListener {
 
       const toAddresses = parsed.to?.value?.map((t: any) => t.address) || []
 
+      // Extract text content (fallback to HTML if no text)
+      const textBody = parsed.text || (parsed.html ? parsed.html.replace(/<[^>]*>/g, '') : '')
+      const htmlBody = parsed.html || null
+
       const email = await prisma.email.create({
         data: {
           emailAccountId: this.accountId,
@@ -146,10 +150,10 @@ export class EmailListener {
           fromAddress: parsed.from?.text || '',
           toAddresses: JSON.stringify(toAddresses),
           subject: parsed.subject || '(No Subject)',
-          textContent: parsed.text || null,
-          htmlContent: parsed.html || null,
+          body: textBody,
+          bodyHtml: htmlBody,
           receivedAt: parsed.date || new Date(),
-          hasAttachments: (parsed.attachments?.length || 0) > 0,
+          isRead: false,
           attachments: parsed.attachments?.length
             ? JSON.stringify(parsed.attachments.map((a: any) => ({
               filename: a.filename,
@@ -157,7 +161,7 @@ export class EmailListener {
               size: a.size
             })))
             : null,
-          headers: null
+          headers: parsed.headers ? JSON.stringify(parsed.headers) : null
         }
       })
 
@@ -211,7 +215,7 @@ export class EmailListener {
 
       // Check keywords filter
       if (matches && conditions.keywords?.length > 0) {
-        const content = `${email.subject} ${email.textContent || ''}`.toLowerCase()
+        const content = `${email.subject} ${email.body || ''}`.toLowerCase()
         matches = conditions.keywords.some((k: string) =>
           content.includes(k.toLowerCase())
         )
@@ -370,9 +374,11 @@ export class EmailListener {
 
   private renderTemplate(email: any, template: string | null, format: string): string {
     const time = new Date(email.receivedAt).toLocaleString('zh-CN')
+    const preview = (email.body || '').substring(0, 200).trim() || '(无正文内容)'
+
     const defaultTemplates: Record<string, string> = {
-      markdown: `📧 **新邮件**\n\n**发件人:** ${email.fromAddress}\n**主题:** ${email.subject}\n**时间:** ${time}`,
-      html: `📧 <b>新邮件</b>\n\n<b>发件人:</b> ${email.fromAddress}\n<b>主题:</b> ${email.subject}\n<b>时间:</b> ${time}`,
+      markdown: `📧 **新邮件**\n\n**发件人:** ${email.fromAddress}\n**主题:** ${email.subject}\n**时间:** ${time}\n\n**内容预览:**\n${preview}`,
+      html: `📧 <b>新邮件</b>\n\n<b>发件人:</b> ${email.fromAddress}\n<b>主题:</b> ${email.subject}\n<b>时间:</b> ${time}\n\n<b>内容预览:</b>\n${preview}`,
       feishu: JSON.stringify({
         header: {
           title: { tag: 'plain_text', content: '📧 新邮件通知' },
@@ -381,7 +387,9 @@ export class EmailListener {
         elements: [
           { tag: 'div', text: { tag: 'lark_md', content: `**发件人:** ${email.fromAddress}` } },
           { tag: 'div', text: { tag: 'lark_md', content: `**主题:** ${email.subject}` } },
-          { tag: 'div', text: { tag: 'lark_md', content: `**时间:** ${time}` } }
+          { tag: 'div', text: { tag: 'lark_md', content: `**时间:** ${time}` } },
+          { tag: 'hr' },
+          { tag: 'div', text: { tag: 'plain_text', content: `内容预览:\n${preview}` } }
         ]
       })
     }
@@ -391,7 +399,8 @@ export class EmailListener {
         .replace(/{from}/g, email.fromAddress)
         .replace(/{subject}/g, email.subject)
         .replace(/{time}/g, time)
-        .replace(/{preview}/g, (email.textContent || '').substring(0, 200))
+        .replace(/{preview}/g, preview)
+        .replace(/{body}/g, email.body || '')
     }
 
     return defaultTemplates[format] || defaultTemplates.markdown
