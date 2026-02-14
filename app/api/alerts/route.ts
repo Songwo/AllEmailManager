@@ -1,8 +1,16 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { getUserFromRequest } from '@/lib/auth'
+
+export const dynamic = 'force-dynamic'
 
 export async function GET(request: Request) {
   try {
+    const user = getUserFromRequest(request)
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const alerts = await prisma.systemAlert.findMany({
       where: { isResolved: false },
       orderBy: { createdAt: 'desc' },
@@ -21,6 +29,11 @@ export async function GET(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
+    const user = getUserFromRequest(request)
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const body = await request.json()
     const { id } = body
 

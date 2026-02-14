@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { getUserFromRequest } from '@/lib/auth'
 import { z } from 'zod'
 
+export const dynamic = 'force-dynamic'
+
 const filterRuleSchema = z.object({
-  userId: z.string(),
   name: z.string(),
   conditions: z.object({
     sender: z.array(z.string()).optional(),
@@ -20,21 +22,30 @@ const filterRuleSchema = z.object({
 
 export async function POST(request: Request) {
   try {
+    const user = getUserFromRequest(request)
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const body = await request.json()
     const data = filterRuleSchema.parse(body)
 
     const rule = await prisma.filterRule.create({
       data: {
-        userId: data.userId,
+        userId: user.userId,
         name: data.name,
-        conditions: data.conditions,
-        actions: data.actions,
+        conditions: JSON.stringify(data.conditions),
+        actions: JSON.stringify(data.actions),
         priority: data.priority,
         isActive: true
       }
     })
 
-    return NextResponse.json(rule)
+    return NextResponse.json({
+      ...rule,
+      conditions: JSON.parse(rule.conditions),
+      actions: JSON.parse(rule.actions)
+    })
   } catch (error: any) {
     console.error('Error creating filter rule:', error)
     return NextResponse.json(
@@ -46,22 +57,21 @@ export async function POST(request: Request) {
 
 export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url)
-    const userId = searchParams.get('userId')
-
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'User ID is required' },
-        { status: 400 }
-      )
+    const user = getUserFromRequest(request)
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const rules = await prisma.filterRule.findMany({
-      where: { userId },
+      where: { userId: user.userId },
       orderBy: { priority: 'desc' }
     })
 
-    return NextResponse.json(rules)
+    return NextResponse.json(rules.map(r => ({
+      ...r,
+      conditions: JSON.parse(r.conditions),
+      actions: JSON.parse(r.actions)
+    })))
   } catch (error: any) {
     console.error('Error fetching filter rules:', error)
     return NextResponse.json(
@@ -73,15 +83,35 @@ export async function GET(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
+    const user = getUserFromRequest(request)
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const body = await request.json()
-    const { id, ...updateData } = body
+    const { id, conditions, actions, ...updateData } = body
+
+    const existing = await prisma.filterRule.findFirst({
+      where: { id, userId: user.userId }
+    })
+    if (!existing) {
+      return NextResponse.json({ error: 'Rule not found' }, { status: 404 })
+    }
+
+    const data: any = { ...updateData }
+    if (conditions) data.conditions = JSON.stringify(conditions)
+    if (actions) data.actions = JSON.stringify(actions)
 
     const rule = await prisma.filterRule.update({
       where: { id },
-      data: updateData
+      data
     })
 
-    return NextResponse.json(rule)
+    return NextResponse.json({
+      ...rule,
+      conditions: JSON.parse(rule.conditions),
+      actions: JSON.parse(rule.actions)
+    })
   } catch (error: any) {
     console.error('Error updating filter rule:', error)
     return NextResponse.json(
@@ -93,20 +123,26 @@ export async function PATCH(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const user = getUserFromRequest(request)
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
 
     if (!id) {
-      return NextResponse.json(
-        { error: 'Rule ID is required' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'Rule ID is required' }, { status: 400 })
     }
 
-    await prisma.filterRule.delete({
-      where: { id }
+    const existing = await prisma.filterRule.findFirst({
+      where: { id, userId: user.userId }
     })
+    if (!existing) {
+      return NextResponse.json({ error: 'Rule not found' }, { status: 404 })
+    }
 
+    await prisma.filterRule.delete({ where: { id } })
     return NextResponse.json({ success: true })
   } catch (error: any) {
     console.error('Error deleting filter rule:', error)

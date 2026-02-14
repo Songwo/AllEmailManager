@@ -1,69 +1,72 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { getUserFromRequest } from '@/lib/auth'
 import { z } from 'zod'
 
-const settingsSchema = z.object({
-  userId: z.string(),
-  notifications: z.object({
-    emailNotifications: z.boolean(),
-    pushNotifications: z.boolean(),
-    soundEnabled: z.boolean(),
-    quietHoursStart: z.string(),
-    quietHoursEnd: z.string()
-  }).optional(),
-  rateLimit: z.object({
-    maxPerMinute: z.number(),
-    maxPerHour: z.number()
-  }).optional(),
-  security: z.object({
-    twoFactorEnabled: z.boolean(),
-    sessionTimeout: z.number()
-  }).optional(),
-  general: z.object({
-    language: z.string(),
-    timezone: z.string(),
-    dateFormat: z.string()
-  }).optional()
+export const dynamic = 'force-dynamic'
+
+const settingsUpdateSchema = z.object({
+  emailNotifications: z.boolean().optional(),
+  pushNotifications: z.boolean().optional(),
+  soundEnabled: z.boolean().optional(),
+  quietHoursStart: z.string().optional(),
+  quietHoursEnd: z.string().optional(),
+  maxPerMinute: z.number().optional(),
+  maxPerHour: z.number().optional(),
+  twoFactorEnabled: z.boolean().optional(),
+  sessionTimeout: z.number().optional(),
+  language: z.string().optional(),
+  timezone: z.string().optional(),
+  dateFormat: z.string().optional()
 })
 
 export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url)
-    const userId = searchParams.get('userId')
-
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'User ID is required' },
-        { status: 400 }
-      )
+    const user = getUserFromRequest(request)
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // In a real app, settings would be stored in database
-    // For now, return default settings
-    const defaultSettings = {
+    // Get or create settings
+    let settings = await prisma.userSettings.findUnique({
+      where: { userId: user.userId }
+    })
+
+    if (!settings) {
+      settings = await prisma.userSettings.create({
+        data: { userId: user.userId }
+      })
+    }
+
+    // Also get user profile info
+    const userInfo = await prisma.user.findUnique({
+      where: { id: user.userId },
+      select: { id: true, email: true, name: true, createdAt: true }
+    })
+
+    return NextResponse.json({
+      profile: userInfo,
       notifications: {
-        emailNotifications: true,
-        pushNotifications: true,
-        soundEnabled: false,
-        quietHoursStart: '22:00',
-        quietHoursEnd: '08:00'
+        emailNotifications: settings.emailNotifications,
+        pushNotifications: settings.pushNotifications,
+        soundEnabled: settings.soundEnabled,
+        quietHoursStart: settings.quietHoursStart,
+        quietHoursEnd: settings.quietHoursEnd
       },
       rateLimit: {
-        maxPerMinute: 10,
-        maxPerHour: 100
+        maxPerMinute: settings.maxPerMinute,
+        maxPerHour: settings.maxPerHour
       },
       security: {
-        twoFactorEnabled: false,
-        sessionTimeout: 30
+        twoFactorEnabled: settings.twoFactorEnabled,
+        sessionTimeout: settings.sessionTimeout
       },
       general: {
-        language: 'zh-CN',
-        timezone: 'Asia/Shanghai',
-        dateFormat: 'YYYY-MM-DD'
+        language: settings.language,
+        timezone: settings.timezone,
+        dateFormat: settings.dateFormat
       }
-    }
-
-    return NextResponse.json(defaultSettings)
+    })
   } catch (error: any) {
     console.error('Error fetching settings:', error)
     return NextResponse.json(
@@ -75,18 +78,69 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const user = getUserFromRequest(request)
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const body = await request.json()
-    const data = settingsSchema.parse(body)
+    const data = settingsUpdateSchema.parse(body)
 
-    // In a real app, save settings to database
-    // For now, just return success
-    console.log('Saving settings:', data)
+    const settings = await prisma.userSettings.upsert({
+      where: { userId: user.userId },
+      create: {
+        userId: user.userId,
+        ...data
+      },
+      update: data
+    })
 
-    return NextResponse.json({ success: true, message: 'Settings saved successfully' })
+    return NextResponse.json({ success: true, settings })
   } catch (error: any) {
     console.error('Error saving settings:', error)
     return NextResponse.json(
       { error: error.message || 'Failed to save settings' },
+      { status: 500 }
+    )
+  }
+}
+
+// Update user profile (name, password)
+export async function PATCH(request: Request) {
+  try {
+    const user = getUserFromRequest(request)
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const body = await request.json()
+    const { name, currentPassword, newPassword } = body
+
+    const updateData: any = {}
+    if (name) updateData.name = name
+
+    if (newPassword) {
+      const bcrypt = (await import('bcryptjs')).default
+      const existingUser = await prisma.user.findUnique({
+        where: { id: user.userId }
+      })
+      if (!existingUser?.password || !await bcrypt.compare(currentPassword, existingUser.password)) {
+        return NextResponse.json({ error: '当前密码错误' }, { status: 400 })
+      }
+      updateData.password = await bcrypt.hash(newPassword, 10)
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id: user.userId },
+      data: updateData,
+      select: { id: true, email: true, name: true }
+    })
+
+    return NextResponse.json(updatedUser)
+  } catch (error: any) {
+    console.error('Error updating profile:', error)
+    return NextResponse.json(
+      { error: error.message || 'Failed to update profile' },
       { status: 500 }
     )
   }

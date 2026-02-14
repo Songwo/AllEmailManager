@@ -1,44 +1,45 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { Mail, Zap, Shield, Bell, ArrowRight } from 'lucide-react'
+import { Mail, Zap, Shield, ArrowRight, CheckCircle2, ChevronRight } from 'lucide-react'
 import Link from 'next/link'
 
 export default function Home() {
   const currentYear = new Date().getFullYear()
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-sky-50 to-emerald-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 overflow-x-hidden">
+    <div className="min-h-screen bg-background text-foreground overflow-x-hidden selection:bg-zinc-900 selection:text-zinc-50 dark:selection:bg-zinc-100 dark:selection:text-zinc-900">
+
       {/* Header */}
-      <header className="fixed top-0 left-0 right-0 z-50 backdrop-blur-xl bg-white/80 dark:bg-slate-900/80 border-b border-slate-200/50 dark:border-slate-800/50 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-4 flex items-center justify-between">
+      <header className="fixed top-0 left-0 right-0 z-50 glass">
+        <div className="max-w-screen-xl mx-auto px-6 h-16 flex items-center justify-between">
           <motion.div
-            initial={{ opacity: 0, x: -20 }}
+            initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
-            className="flex items-center gap-2 sm:gap-3"
+            className="flex items-center gap-3"
           >
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-sky-500 to-emerald-500 flex items-center justify-center shadow-lg shadow-sky-500/30 hover:shadow-xl hover:shadow-sky-500/40 transition-all duration-300">
-              <Mail className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground">
+              <Mail className="w-4 h-4" />
             </div>
-            <span className="text-lg sm:text-xl font-bold bg-gradient-to-r from-sky-600 to-emerald-600 bg-clip-text text-transparent tracking-tight">
+            <span className="text-lg font-semibold tracking-tight">
               EmailHub
             </span>
           </motion.div>
 
           <motion.div
-            initial={{ opacity: 0, x: 20 }}
+            initial={{ opacity: 0, x: 10 }}
             animate={{ opacity: 1, x: 0 }}
-            className="flex items-center gap-2 sm:gap-4"
+            className="flex items-center gap-6"
           >
             <Link
               href="/login"
-              className="px-3 sm:px-4 py-2 text-sm sm:text-base text-slate-700 dark:text-slate-300 hover:text-sky-600 dark:hover:text-sky-400 transition-colors font-medium"
+              className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
             >
               登录
             </Link>
             <Link
               href="/dashboard"
-              className="px-4 sm:px-6 py-2 text-sm sm:text-base bg-gradient-to-r from-sky-500 to-emerald-500 text-white rounded-lg hover:shadow-xl hover:shadow-sky-500/30 hover:scale-105 active:scale-95 transition-all duration-200 font-medium"
+              className="px-4 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-opacity"
             >
               开始使用
             </Link>
@@ -47,147 +48,123 @@ export default function Home() {
       </header>
 
       {/* Hero Section */}
-      <section className="pt-24 sm:pt-32 pb-16 sm:pb-20 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto">
+      <section className="pt-40 pb-32 px-6">
+        <div className="max-w-4xl mx-auto text-center">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
-            className="text-center"
+            transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
           >
-            <motion.div
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
-              className="inline-block mb-6 sm:mb-8"
-            >
-              <div className="px-4 py-2 bg-gradient-to-r from-sky-100 to-emerald-100 dark:from-sky-900/30 dark:to-emerald-900/30 rounded-full text-sky-600 dark:text-sky-400 text-sm font-medium shadow-lg shadow-sky-500/10 backdrop-blur-sm border border-sky-200/50 dark:border-sky-800/50">
-                ✨ 智能邮件管理平台
-              </div>
-            </motion.div>
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-secondary border border-border text-xs font-medium text-secondary-foreground mb-8">
+              <span className="relative flex h-2 w-2">
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-zinc-500"></span>
+              </span>
+              v2.0 全新发布
+            </div>
 
-            <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-extrabold mb-6 sm:mb-8 bg-gradient-to-r from-slate-900 via-sky-700 to-emerald-700 dark:from-slate-100 dark:via-sky-400 dark:to-emerald-400 bg-clip-text text-transparent leading-tight tracking-tight px-4">
-              统一管理所有邮箱
-              <br />
-              实时推送重要消息
+            <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-8 text-foreground">
+              重塑您的
+              <span className="text-zinc-500 dark:text-zinc-400 block mt-2">邮件管理体验</span>
             </h1>
 
-            <p className="text-base sm:text-lg md:text-xl text-slate-600 dark:text-slate-400 mb-10 sm:mb-12 max-w-2xl mx-auto leading-relaxed px-4 font-normal">
-              支持多邮箱绑定，智能过滤规则，接入微信、飞书、Telegram 等平台，让重要邮件不再错过
+            <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mb-12 leading-relaxed">
+              不仅仅是聚合。我们将所有邮箱统一到一个极简的界面中，剔除噪音，让您专注于真正重要的沟通。
             </p>
 
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4 }}
-              className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center px-4"
-            >
+            <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
               <Link
                 href="/dashboard"
-                className="group px-6 sm:px-8 py-3 sm:py-4 bg-gradient-to-r from-sky-500 to-emerald-500 text-white rounded-xl font-semibold hover:shadow-2xl hover:shadow-sky-500/30 hover:scale-105 active:scale-95 transition-all duration-300 flex items-center justify-center gap-2 text-base sm:text-lg"
+                className="group px-8 py-4 bg-primary text-primary-foreground rounded-full font-medium text-base hover:opacity-90 transition-all flex items-center gap-2"
               >
                 立即开始
-                <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform duration-300" />
+                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
               </Link>
               <Link
                 href="#features"
-                className="px-6 sm:px-8 py-3 sm:py-4 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm text-slate-700 dark:text-slate-300 rounded-xl font-semibold hover:shadow-xl hover:scale-105 active:scale-95 transition-all duration-300 border border-slate-200 dark:border-slate-700 text-base sm:text-lg"
+                className="px-8 py-4 bg-secondary text-secondary-foreground rounded-full font-medium text-base hover:bg-secondary/80 transition-all"
               >
                 了解更多
               </Link>
-            </motion.div>
-          </motion.div>
-
-          {/* Feature Cards */}
-          <motion.div
-            initial={{ opacity: 0, y: 40 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.6, duration: 0.6 }}
-            className="mt-16 sm:mt-20 lg:mt-24 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 px-4"
-            id="features"
-          >
-            {[
-              {
-                icon: Mail,
-                title: '多邮箱管理',
-                description: '支持 Gmail、Outlook、QQ 等主流邮箱，统一管理',
-                color: 'from-sky-500 to-blue-500'
-              },
-              {
-                icon: Zap,
-                title: '实时推送',
-                description: '接入微信、飞书、Telegram，第一时间收到通知',
-                color: 'from-emerald-500 to-green-500'
-              },
-              {
-                icon: Shield,
-                title: '智能过滤',
-                description: '自定义规则，按发件人、主题、关键词精准过滤',
-                color: 'from-amber-500 to-orange-500'
-              },
-              {
-                icon: Bell,
-                title: '防骚扰策略',
-                description: '频率限制、静默时段，避免消息轰炸',
-                color: 'from-violet-500 to-purple-500'
-              }
-            ].map((feature, index) => (
-              <motion.div
-                key={index}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.8 + index * 0.1 }}
-                whileHover={{ y: -8, scale: 1.02 }}
-                className="p-6 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm rounded-2xl border border-slate-200/50 dark:border-slate-700/50 hover:shadow-2xl hover:shadow-sky-500/10 hover:border-sky-300/50 dark:hover:border-sky-700/50 transition-all duration-300 cursor-pointer group"
-              >
-                <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${feature.color} flex items-center justify-center mb-4 group-hover:scale-110 group-hover:rotate-3 transition-all duration-300 shadow-lg`}>
-                  <feature.icon className="w-6 h-6 text-white" />
-                </div>
-                <h3 className="text-lg font-bold mb-2 text-slate-900 dark:text-slate-100 tracking-tight">
-                  {feature.title}
-                </h3>
-                <p className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed">
-                  {feature.description}
-                </p>
-              </motion.div>
-            ))}
+            </div>
           </motion.div>
         </div>
       </section>
 
-      {/* Stats Section */}
-      <section className="py-16 sm:py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-br from-white/60 to-sky-50/60 dark:from-slate-900/60 dark:to-slate-800/60 backdrop-blur-md border-y border-slate-200/50 dark:border-slate-800/50">
-        <div className="max-w-7xl mx-auto">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-8 sm:gap-12 text-center">
-            {[
-              { value: '10+', label: '支持邮箱类型' },
-              { value: '3', label: '推送平台' },
-              { value: '99.9%', label: '消息送达率' }
-            ].map((stat, index) => (
-              <motion.div
-                key={index}
-                initial={{ opacity: 0, scale: 0.5 }}
-                whileInView={{ opacity: 1, scale: 1 }}
-                viewport={{ once: true }}
-                transition={{ delay: index * 0.1, type: "spring", stiffness: 200 }}
-                className="group"
-              >
-                <div className="text-4xl sm:text-5xl lg:text-6xl font-extrabold bg-gradient-to-r from-sky-600 to-emerald-600 bg-clip-text text-transparent mb-2 sm:mb-3 group-hover:scale-110 transition-transform duration-300">
-                  {stat.value}
-                </div>
-                <div className="text-sm sm:text-base text-slate-600 dark:text-slate-400 font-medium">
-                  {stat.label}
-                </div>
-              </motion.div>
-            ))}
+      {/* Feature Grid */}
+      <section id="features" className="py-24 px-6 bg-secondary/30">
+        <div className="max-w-screen-xl mx-auto">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            {/* Main Feature */}
+            <div className="col-span-1 md:col-span-2 p-10 rounded-3xl bg-background border border-border hover:border-zinc-400 dark:hover:border-zinc-600 transition-colors duration-500 group">
+              <div className="w-12 h-12 rounded-2xl bg-secondary flex items-center justify-center mb-8">
+                <Mail className="w-6 h-6 text-foreground" />
+              </div>
+              <h3 className="text-2xl font-bold mb-4">全平台邮箱聚合</h3>
+              <p className="text-muted-foreground leading-relaxed mb-8 max-w-lg">
+                不再需要在多个 App 之间切换。无论是 Gmail、Outlook、亦或是公司企业邮箱，EmailHub 都能完美支持。统一的收件箱，统一的操作体验。
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-y-4 gap-x-8">
+                {['Gmail', 'Outlook', 'QQ 邮箱', '163 邮箱', '企业微信', '自定义 IMAP'].map((item) => (
+                  <div key={item} className="flex items-center gap-2 text-sm text-foreground/80">
+                    <CheckCircle2 className="w-4 h-4 text-zinc-500" />
+                    {item}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Secondary Feature 1 */}
+            <div className="p-10 rounded-3xl bg-background border border-border hover:border-zinc-400 dark:hover:border-zinc-600 transition-colors duration-500">
+              <div className="w-12 h-12 rounded-2xl bg-secondary flex items-center justify-center mb-8">
+                <Zap className="w-6 h-6 text-foreground" />
+              </div>
+              <h3 className="text-xl font-bold mb-3">实时推送</h3>
+              <p className="text-muted-foreground text-sm leading-relaxed">
+                毫秒级延迟。邮件到达的同时，您的微信或 Telegram 就会收到通知。
+              </p>
+            </div>
+
+            {/* Secondary Feature 2 */}
+            <div className="p-10 rounded-3xl bg-background border border-border hover:border-zinc-400 dark:hover:border-zinc-600 transition-colors duration-500">
+              <div className="w-12 h-12 rounded-2xl bg-secondary flex items-center justify-center mb-8">
+                <Shield className="w-6 h-6 text-foreground" />
+              </div>
+              <h3 className="text-xl font-bold mb-3">隐私安全</h3>
+              <p className="text-muted-foreground text-sm leading-relaxed">
+                本地加密存储，直接与邮件服务器通信。我们无法查看您的邮件内容。
+              </p>
+            </div>
+
+            {/* Call to Action */}
+            <div className="col-span-1 md:col-span-2 p-10 rounded-3xl bg-primary text-primary-foreground flex flex-col justify-between">
+              <div>
+                <h3 className="text-2xl font-bold mb-2">准备好提升效率了吗？</h3>
+                <p className="text-primary-foreground/70">加入超过 10,000+ 用户，开始使用最智能的邮件管理工具。</p>
+              </div>
+              <div className="mt-8">
+                <Link
+                  href="/dashboard"
+                  className="inline-flex items-center gap-2 text-sm font-medium hover:gap-3 transition-all"
+                >
+                  免费开始使用 <ChevronRight className="w-4 h-4" />
+                </Link>
+              </div>
+            </div>
+
           </div>
         </div>
       </section>
 
       {/* Footer */}
-      <footer className="py-8 sm:py-12 px-4 sm:px-6 lg:px-8 border-t border-slate-200/50 dark:border-slate-800/50 bg-white/30 dark:bg-slate-900/30 backdrop-blur-sm">
-        <div className="max-w-7xl mx-auto text-center text-slate-600 dark:text-slate-400">
-          <p className="text-sm sm:text-base">© {currentYear} EmailHub. 让邮件管理更简单.</p>
+      <footer className="py-12 border-t border-border bg-background">
+        <div className="max-w-screen-xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">
+          <div className="flex items-center gap-2">
+            <div className="w-5 h-5 rounded bg-primary flex items-center justify-center text-primary-foreground">
+              <Mail className="w-3 h-3" />
+            </div>
+            <span className="font-semibold text-sm">EmailHub</span>
+          </div>
+          <p className="text-xs text-muted-foreground">© {currentYear} EmailHub. All rights reserved.</p>
         </div>
       </footer>
     </div>

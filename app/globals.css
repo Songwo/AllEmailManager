@@ -1,139 +1,149 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #0f172a;
-  --primary: #0ea5e9;
-  --primary-hover: #0284c7;
-  --secondary: #10b981;
-  --accent: #f59e0b;
-  --muted: #f1f5f9;
-  --border: #e2e8f0;
-  --card: #ffffff;
-  --card-hover: #f8fafc;
-}
+@theme {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif;
 
-@theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+
+  --animate-fade-in: fadeIn 0.5s ease-out;
+  --animate-slide-up: slideUp 0.5s ease-out;
+}
+
+:root {
+  /* Royal Blue / Indigo Professional Theme */
+  --background: #ffffff;
+  --foreground: #0f172a;
+  /* Slate 900 */
+
+  --primary: #1e40af;
+  /* Blue 800 - Royal Blue */
+  --primary-foreground: #ffffff;
+
+  --secondary: #eff6ff;
+  /* Blue 50 */
+  --secondary-foreground: #172554;
+  /* Blue 950 */
+
+  --muted: #f8fafc;
+  /* Slate 50 */
+  --muted-foreground: #64748b;
+  /* Slate 500 */
+
+  --accent: #dbeafe;
+  /* Blue 100 */
+  --accent-foreground: #1e3a8a;
+  /* Blue 900 */
+
+  --destructive: #ef4444;
+  /* Red 500 */
+  --destructive-foreground: #ffffff;
+
+  --border: #e2e8f0;
+  /* Slate 200 */
+  --input: #e2e8f0;
+  --ring: #1e40af;
+  /* Blue 800 */
+
+  --radius: 0.5rem;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0f172a;
-    --foreground: #f1f5f9;
-    --primary: #0ea5e9;
-    --primary-hover: #38bdf8;
-    --secondary: #10b981;
-    --accent: #f59e0b;
-    --muted: #1e293b;
-    --border: #334155;
-    --card: #1e293b;
-    --card-hover: #334155;
-  }
-}
+    /* Slate 900 - Deep Blue/Black blend, not pure black */
+    --foreground: #f8fafc;
+    /* Slate 50 */
 
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
+    --primary: #3b82f6;
+    /* Blue 500 - Brighter Blue for dark mode */
+    --primary-foreground: #ffffff;
+
+    --secondary: #1e293b;
+    /* Slate 800 */
+    --secondary-foreground: #f8fafc;
+
+    --muted: #0f172a;
+    /* Slate 900 */
+    --muted-foreground: #94a3b8;
+    /* Slate 400 */
+
+    --accent: #1e293b;
+    --accent-foreground: #f8fafc;
+
+    --destructive: #7f1d1d;
+    --destructive-foreground: #fafafa;
+
+    --border: #1e293b;
+    /* Slate 800 */
+    --input: #1e293b;
+    --ring: #3b82f6;
+    /* Blue 500 */
+  }
 }
 
 body {
-  background: var(--background);
+  background-color: var(--background);
   color: var(--foreground);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'WenQuanYi Micro Hei', sans-serif;
-  overflow-x: hidden;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
-  line-height: 1.6;
 }
 
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-
-::-webkit-scrollbar-track {
-  background: var(--muted);
-  border-radius: 5px;
-}
-
-::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #0ea5e9, #10b981);
-  border-radius: 5px;
-  border: 2px solid var(--muted);
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, #0284c7, #059669);
-}
-
-/* Smooth animations */
-* {
-  transition-property: background-color, border-color, color, fill, stroke, opacity, box-shadow, transform;
-  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-  transition-duration: 200ms;
-}
-
-/* Glass morphism effect */
-.glass {
-  background: rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-}
-
-.glass-dark {
-  background: rgba(15, 23, 42, 0.7);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-/* Gradient text */
-.gradient-text {
-  background: linear-gradient(135deg, #0ea5e9, #10b981);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-/* Smooth page transitions */
 @keyframes fadeIn {
   from {
     opacity: 0;
-    transform: translateY(20px);
   }
+
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 
-.animate-fade-in {
-  animation: fadeIn 0.6s ease-out;
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 
-/* Better focus styles */
-*:focus-visible {
-  outline: 2px solid #0ea5e9;
-  outline-offset: 2px;
-  border-radius: 4px;
+.glass {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
 }
 
-/* Selection color */
-::selection {
-  background-color: #0ea5e9;
-  color: white;
+.dark .glass {
+  background: rgba(15, 23, 42, 0.8);
+  /* Dark Blue tint */
+  border-bottom: 1px solid var(--border);
 }
-
-::-moz-selection {
-  background-color: #0ea5e9;
-  color: white;
-}
-

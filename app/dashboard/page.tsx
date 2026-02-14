@@ -1,211 +1,227 @@
 'use client'
 
-import { motion } from 'framer-motion'
-import { Mail, Plus, Settings, Bell, Filter, TrendingUp } from 'lucide-react'
-import { useState } from 'react'
-import Link from 'next/link'
+import { Mail, Bell, TrendingUp, Settings, Loader2 } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+
+interface AnalyticsData {
+  overview: {
+    totalEmails: number
+    unreadEmails: number
+    todayEmails: number
+    activeAccounts: number
+  }
+}
+
+interface EmailItem {
+  id: string
+  fromAddress: string
+  subject: string
+  textContent: string | null
+  receivedAt: string
+  isRead: boolean
+  hasAttachments: boolean
+  emailAccount: {
+    email: string
+    provider: string
+  }
+}
 
 export default function Dashboard() {
-  const [stats] = useState({
-    totalEmails: 1247,
-    unread: 23,
-    todayReceived: 45,
-    activeAccounts: 3
+  const router = useRouter()
+  const [user, setUser] = useState<{ name: string } | null>(null)
+  const [stats, setStats] = useState({
+    totalEmails: 0,
+    unread: 0,
+    todayReceived: 0,
+    activeAccounts: 0
   })
+  const [emails, setEmails] = useState<EmailItem[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const userData = localStorage.getItem('user')
+    if (userData) {
+      setUser(JSON.parse(userData))
+    }
+
+    const token = localStorage.getItem('token')
+    if (!token) return
+
+    // Fetch analytics
+    const fetchData = async () => {
+      try {
+        const headers = { 'Authorization': `Bearer ${token}` }
+
+        const [analyticsRes, emailsRes] = await Promise.all([
+          fetch('/api/analytics', { headers }),
+          fetch('/api/emails?limit=10', { headers })
+        ])
+
+        if (analyticsRes.ok) {
+          const analytics: AnalyticsData = await analyticsRes.json()
+          setStats({
+            totalEmails: analytics.overview.totalEmails,
+            unread: analytics.overview.unreadEmails,
+            todayReceived: analytics.overview.todayEmails,
+            activeAccounts: analytics.overview.activeAccounts
+          })
+        }
+
+        if (emailsRes.ok) {
+          const emailData = await emailsRes.json()
+          setEmails(emailData.emails || [])
+        }
+      } catch (error) {
+        console.error('Failed to fetch dashboard data:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchData()
+  }, [])
+
+  const formatTime = (dateStr: string) => {
+    const date = new Date(dateStr)
+    const now = new Date()
+    const diffMs = now.getTime() - date.getTime()
+    const diffMin = Math.floor(diffMs / 60000)
+    const diffHour = Math.floor(diffMs / 3600000)
+    const diffDay = Math.floor(diffMs / 86400000)
+
+    if (diffMin < 1) return '刚刚'
+    if (diffMin < 60) return `${diffMin}分钟前`
+    if (diffHour < 24) return `${diffHour}小时前`
+    if (diffDay < 7) return `${diffDay}天前`
+    return date.toLocaleDateString('zh-CN')
+  }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
-      {/* Sidebar */}
-      <aside className="fixed left-0 top-0 h-full w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 p-6">
-        <Link href="/" className="flex items-center gap-2 mb-8">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-500 to-emerald-500 flex items-center justify-center">
-            <Mail className="w-6 h-6 text-white" />
+    <div>
+      <div className="mb-8">
+        <h1 className="text-2xl font-bold tracking-tight mb-1">
+          仪表盘
+        </h1>
+        <p className="text-muted-foreground text-sm">
+          欢迎回来，{user?.name || 'User'}。这里是您的今日概览。
+        </p>
+      </div>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        {[
+          {
+            label: '总邮件数',
+            value: stats.totalEmails,
+            icon: Mail,
+            color: 'text-blue-600 dark:text-blue-400'
+          },
+          {
+            label: '未读邮件',
+            value: stats.unread,
+            icon: Bell,
+            color: 'text-amber-600 dark:text-amber-400'
+          },
+          {
+            label: '今日接收',
+            value: stats.todayReceived,
+            icon: TrendingUp,
+            color: 'text-emerald-600 dark:text-emerald-400'
+          },
+          {
+            label: '活跃账户',
+            value: stats.activeAccounts,
+            icon: Settings,
+            color: 'text-violet-600 dark:text-violet-400'
+          }
+        ].map((stat, index) => (
+          <div
+            key={index}
+            className="bg-background rounded-xl p-5 border border-border hover:border-zinc-400 dark:hover:border-zinc-600 transition-colors"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div className={stat.color}>
+                <stat.icon className="w-5 h-5" />
+              </div>
+            </div>
+            <div className="text-2xl font-bold tracking-tight mb-1">
+              {loading ? <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /> : stat.value.toLocaleString()}
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {stat.label}
+            </div>
           </div>
-          <span className="text-xl font-bold bg-gradient-to-r from-sky-600 to-emerald-600 bg-clip-text text-transparent">
-            EmailHub
-          </span>
-        </Link>
+        ))}
+      </div>
 
-        <nav className="space-y-2">
-          {[
-            { icon: Mail, label: '邮件列表', href: '/dashboard', active: true },
-            { icon: Plus, label: '邮箱管理', href: '/dashboard/accounts' },
-            { icon: Bell, label: '推送渠道', href: '/dashboard/channels' },
-            { icon: Filter, label: '过滤规则', href: '/dashboard/filters' },
-            { icon: TrendingUp, label: '统计分析', href: '/dashboard/analytics' },
-            { icon: Settings, label: '系统设置', href: '/dashboard/settings' }
-          ].map((item, index) => (
-            <motion.div
-              key={index}
-              whileHover={{ x: 4 }}
-              whileTap={{ scale: 0.98 }}
-            >
-              <Link
-                href={item.href}
-                className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
-                  item.active
-                    ? 'bg-gradient-to-r from-sky-500 to-emerald-500 text-white shadow-lg'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-                }`}
-              >
-                <item.icon className="w-5 h-5" />
-                <span className="font-medium">{item.label}</span>
-              </Link>
-            </motion.div>
-          ))}
-        </nav>
-      </aside>
-
-      {/* Main Content */}
-      <main className="ml-64 p-8">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100 mb-2">
-            邮件管理中心
-          </h1>
-          <p className="text-slate-600 dark:text-slate-400">
-            实时监控您的所有邮箱账户
-          </p>
+      {/* Email List */}
+      <div className="bg-background rounded-xl border border-border overflow-hidden">
+        <div className="p-5 border-b border-border flex items-center justify-between bg-muted/10">
+          <h2 className="text-base font-semibold">
+            最近邮件
+          </h2>
+          <button
+            onClick={() => router.push('/dashboard')}
+            className="text-sm text-primary hover:underline"
+          >
+            查看全部
+          </button>
         </div>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          {[
-            {
-              label: '总邮件数',
-              value: stats.totalEmails,
-              icon: Mail,
-              color: 'from-sky-500 to-blue-500',
-              change: '+12%'
-            },
-            {
-              label: '未读邮件',
-              value: stats.unread,
-              icon: Bell,
-              color: 'from-emerald-500 to-green-500',
-              change: '-5%'
-            },
-            {
-              label: '今日接收',
-              value: stats.todayReceived,
-              icon: TrendingUp,
-              color: 'from-amber-500 to-orange-500',
-              change: '+8%'
-            },
-            {
-              label: '活跃账户',
-              value: stats.activeAccounts,
-              icon: Settings,
-              color: 'from-purple-500 to-pink-500',
-              change: '100%'
-            }
-          ].map((stat, index) => (
-            <motion.div
-              key={index}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.1 }}
-              whileHover={{ y: -4, scale: 1.02 }}
-              className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 hover:shadow-xl transition-all cursor-pointer"
-            >
-              <div className="flex items-start justify-between mb-4">
-                <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${stat.color} flex items-center justify-center`}>
-                  <stat.icon className="w-6 h-6 text-white" />
-                </div>
-                <span className="text-sm font-medium text-emerald-600 dark:text-emerald-400">
-                  {stat.change}
-                </span>
-              </div>
-              <div className="text-3xl font-bold text-slate-900 dark:text-slate-100 mb-1">
-                {stat.value.toLocaleString()}
-              </div>
-              <div className="text-sm text-slate-600 dark:text-slate-400">
-                {stat.label}
-              </div>
-            </motion.div>
-          ))}
-        </div>
-
-        {/* Email List */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
-          className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden"
-        >
-          <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
-              最近邮件
-            </h2>
-            <button className="px-4 py-2 bg-gradient-to-r from-sky-500 to-emerald-500 text-white rounded-lg hover:shadow-lg hover:scale-105 transition-all">
-              查看全部
-            </button>
-          </div>
-
-          <div className="divide-y divide-slate-200 dark:divide-slate-800">
-            {[
-              {
-                from: 'GitHub <notifications@github.com>',
-                subject: '[anthropics/claude-code] New release: v2.1.0',
-                preview: 'We are excited to announce the release of Claude Code v2.1.0...',
-                time: '5分钟前',
-                unread: true,
-                hasAttachment: false
-              },
-              {
-                from: 'Vercel <no-reply@vercel.com>',
-                subject: 'Your deployment is ready',
-                preview: 'Your project "email-manager" has been successfully deployed...',
-                time: '1小时前',
-                unread: true,
-                hasAttachment: false
-              },
-              {
-                from: 'AWS <no-reply@aws.amazon.com>',
-                subject: 'Monthly billing statement',
-                preview: 'Your AWS bill for January 2026 is now available...',
-                time: '3小时前',
-                unread: false,
-                hasAttachment: true
-              }
-            ].map((email, index) => (
-              <motion.div
-                key={index}
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.5 + index * 0.1 }}
-                whileHover={{ backgroundColor: 'var(--card-hover)' }}
-                className="p-6 cursor-pointer transition-colors"
+        <div className="divide-y divide-border">
+          {loading ? (
+            <div className="p-8 text-center text-muted-foreground">
+              <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />
+              加载中...
+            </div>
+          ) : emails.length === 0 ? (
+            <div className="p-8 text-center text-muted-foreground">
+              <Mail className="w-8 h-8 mx-auto mb-3 opacity-30" />
+              <p className="text-sm">暂无邮件</p>
+              <p className="text-xs mt-1">添加邮箱账户后，新邮件将显示在这里</p>
+            </div>
+          ) : (
+            emails.map((email) => (
+              <div
+                key={email.id}
+                className="p-4 hover:bg-muted/30 cursor-pointer transition-colors group"
+                onClick={() => router.push(`/dashboard/email/${email.id}`)}
               >
                 <div className="flex items-start gap-4">
-                  <div className={`w-2 h-2 rounded-full mt-2 ${email.unread ? 'bg-sky-500' : 'bg-transparent'}`} />
+                  <div className={`mt-2 w-2 h-2 rounded-full flex-shrink-0 ${email.isRead ? 'bg-transparent' : 'bg-indigo-500'}`} />
+
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <span className={`font-medium ${email.unread ? 'text-slate-900 dark:text-slate-100' : 'text-slate-600 dark:text-slate-400'}`}>
-                        {email.from}
+                      <span className={`text-sm font-medium ${!email.isRead ? 'text-foreground' : 'text-muted-foreground'}`}>
+                        {email.fromAddress.split('<')[0].trim() || email.fromAddress}
                       </span>
-                      {email.hasAttachment && (
-                        <span className="text-xs px-2 py-0.5 bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded">
+                      <span className="text-xs text-muted-foreground hidden sm:inline-block">
+                        &lt;{email.emailAccount?.email}&gt;
+                      </span>
+                      {email.hasAttachments && (
+                        <span className="text-[10px] px-1.5 py-0.5 bg-secondary text-secondary-foreground rounded border border-border">
                           附件
                         </span>
                       )}
                     </div>
-                    <div className={`text-sm mb-1 ${email.unread ? 'font-semibold text-slate-900 dark:text-slate-100' : 'text-slate-700 dark:text-slate-300'}`}>
+                    <div className={`text-sm mb-1 truncate ${!email.isRead ? 'font-medium text-foreground' : 'text-muted-foreground'}`}>
                       {email.subject}
                     </div>
-                    <div className="text-sm text-slate-500 dark:text-slate-500 truncate">
-                      {email.preview}
+                    <div className="text-xs text-muted-foreground truncate group-hover:text-foreground/80 transition-colors">
+                      {email.textContent?.substring(0, 100) || '(无内容预览)'}
                     </div>
                   </div>
-                  <div className="text-xs text-slate-500 dark:text-slate-500 whitespace-nowrap">
-                    {email.time}
+
+                  <div className="text-xs text-muted-foreground whitespace-nowrap pt-1">
+                    {formatTime(email.receivedAt)}
                   </div>
                 </div>
-              </motion.div>
-            ))}
-          </div>
-        </motion.div>
-      </main>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
     </div>
   )
 }
