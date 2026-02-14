@@ -22,7 +22,7 @@ export async function GET(
       where: { id, emailAccount: { userId: user.userId } },
       include: {
         emailAccount: {
-          select: { email: true, provider: true }
+          select: { id: true, email: true, provider: true }
         },
         pushLogs: {
           include: {

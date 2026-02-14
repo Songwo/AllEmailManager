@@ -1,10 +1,11 @@
 'use client'
 
-import { Mail, Plus, Settings, Bell, Filter, TrendingUp, Search, Menu, LogOut, ChevronDown } from 'lucide-react'
+import { Mail, Plus, Settings, Bell, Filter, TrendingUp, Search, LogOut, LayoutTemplate } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { OnboardingGuide } from '@/components/ui/onboarding-guide'
+import { NotificationCenter } from '@/components/ui/notification-center'
 
 export default function DashboardLayout({
     children,
@@ -13,7 +14,7 @@ export default function DashboardLayout({
 }) {
     const router = useRouter()
     const pathname = usePathname()
-    const [user, setUser] = useState<{ name: string, email: string } | null>(null)
+    const [user, setUser] = useState<{ name: string, email: string, avatarUrl?: string | null } | null>(null)
 
     useEffect(() => {
         const userData = localStorage.getItem('user')
@@ -26,6 +27,24 @@ export default function DashboardLayout({
                 console.error("Failed to parse user data", e);
                 router.push('/login')
             }
+        }
+
+        const onUserUpdated = () => {
+            const latest = localStorage.getItem('user')
+            if (latest) {
+                try {
+                    setUser(JSON.parse(latest))
+                } catch {
+                    // Ignore malformed cache.
+                }
+            }
+        }
+
+        window.addEventListener('storage', onUserUpdated)
+        window.addEventListener('user-updated', onUserUpdated as EventListener)
+        return () => {
+            window.removeEventListener('storage', onUserUpdated)
+            window.removeEventListener('user-updated', onUserUpdated as EventListener)
         }
     }, [router])
 
@@ -42,6 +61,7 @@ export default function DashboardLayout({
     const configItems = [
         { icon: Plus, label: '邮箱管理', href: '/dashboard/accounts' },
         { icon: Bell, label: '推送渠道', href: '/dashboard/channels' },
+        { icon: LayoutTemplate, label: '模板管理', href: '/dashboard/templates' },
         { icon: Filter, label: '过滤规则', href: '/dashboard/filters' },
         { icon: Settings, label: '系统设置', href: '/dashboard/settings' }
     ]
@@ -102,9 +122,17 @@ export default function DashboardLayout({
 
                 <div className="border-t border-border pt-4">
                     <div className="flex items-center gap-3 px-2">
-                        <div className="w-8 h-8 rounded-full bg-zinc-200 dark:bg-zinc-800 flex items-center justify-center text-xs font-medium">
-                            {user?.name?.[0]?.toUpperCase() || 'U'}
-                        </div>
+                        {user?.avatarUrl ? (
+                            <img
+                                src={user.avatarUrl}
+                                alt="avatar"
+                                className="w-8 h-8 rounded-full object-cover border border-border"
+                            />
+                        ) : (
+                            <div className="w-8 h-8 rounded-full bg-zinc-200 dark:bg-zinc-800 flex items-center justify-center text-xs font-medium">
+                                {user?.name?.[0]?.toUpperCase() || 'U'}
+                            </div>
+                        )}
                         <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium truncate">{user?.name || 'User'}</p>
                             <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
@@ -133,9 +161,7 @@ export default function DashboardLayout({
                                 className="pl-9 pr-4 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring w-64"
                             />
                         </div>
-                        <button className="w-9 h-9 flex items-center justify-center rounded-lg border border-border bg-background hover:bg-secondary transition-colors">
-                            <Bell className="w-4 h-4 text-muted-foreground" />
-                        </button>
+                        <NotificationCenter />
                     </div>
                 </div>
 

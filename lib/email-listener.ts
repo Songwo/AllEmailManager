@@ -1,20 +1,45 @@
+import { sendEventToUser } from '@/app/api/events/route'
 import Imap from 'imap'
 import { simpleParser } from 'mailparser'
 import { decryptPassword } from './encryption'
 import { prisma } from './prisma'
+import { createNotification } from './notifications'
+
+function hasPrismaModel(modelName: string): boolean {
+  const runtimeDataModel = (prisma as any)?._runtimeDataModel
+  return !!runtimeDataModel?.models?.[modelName]
+}
+
+function hasPrismaField(modelName: string, fieldName: string): boolean {
+  const model = (prisma as any)?._runtimeDataModel?.models?.[modelName]
+  if (!model?.fields) return false
+  return model.fields.some((field: { name: string }) => field.name === fieldName)
+}
+
+function hasPushTemplateSupport(): boolean {
+  return hasPrismaModel('PushTemplate') && typeof (prisma as any)?.pushTemplate !== 'undefined'
+}
+
+function hasChannelTemplateRelation(): boolean {
+  return hasPrismaField('PushChannel', 'template')
+}
 
 export class EmailListener {
   private imap: Imap | null = null
   private accountId: string
+  private userId: string
   private reconnectAttempts = 0
-  private maxReconnectAttempts = 5
+  private maxReconnectAttempts = 10
   private reconnectTimer: NodeJS.Timeout | null = null
+  private isManualStop = false
 
-  constructor(accountId: string) {
+  constructor(accountId: string, userId: string) {
     this.accountId = accountId
+    this.userId = userId
   }
 
   async start() {
+    this.isManualStop = false
     const account = await prisma.emailAccount.findUnique({
       where: { id: this.accountId }
     })
@@ -30,24 +55,33 @@ export class EmailListener {
       port: account.imapPort,
       tls: true,
       tlsOptions: { rejectUnauthorized: false },
-      keepalive: true
+      keepalive: {
+        interval: 10000,
+        idleInterval: 300000,
+        forceNoop: true
+      }
     })
 
     this.imap.once('ready', () => {
+      console.log(`[${account.email}] IMAP connected`)
       this.reconnectAttempts = 0
       this.openInbox()
     })
 
     this.imap.once('error', async (err: Error) => {
-      console.error(`IMAP error for ${this.accountId}:`, err.message)
+      console.error(`[${account.email}] IMAP error:`, err.message)
       await this.updateAccountStatus('error', err.message)
-      this.scheduleReconnect()
+      if (!this.isManualStop) {
+        this.scheduleReconnect()
+      }
     })
 
     this.imap.once('end', async () => {
-      console.log(`IMAP connection ended for ${this.accountId}`)
+      console.log(`[${account.email}] IMAP connection ended`)
       await this.updateAccountStatus('disconnected')
-      this.scheduleReconnect()
+      if (!this.isManualStop) {
+        this.scheduleReconnect()
+      }
     })
 
     this.imap.connect()
@@ -55,23 +89,23 @@ export class EmailListener {
 
   private scheduleReconnect() {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.error(`Max reconnect attempts reached for ${this.accountId}`)
+      console.error(`[${this.accountId}] Max reconnect attempts reached`)
       this.createAlert('reconnect_failed', 'error',
         `邮箱监听重连失败，已达最大重试次数 (${this.maxReconnectAttempts})`)
       return
     }
 
-    // Exponential backoff: 5s, 10s, 20s, 40s, 80s
-    const delay = Math.min(5000 * Math.pow(2, this.reconnectAttempts), 80000)
+    // Exponential backoff: 5s, 10s, 20s, 40s, 80s, 160s, 320s...
+    const delay = Math.min(5000 * Math.pow(2, this.reconnectAttempts), 320000)
     this.reconnectAttempts++
 
-    console.log(`Reconnecting ${this.accountId} in ${delay / 1000}s (attempt ${this.reconnectAttempts})`)
+    console.log(`[${this.accountId}] Reconnecting in ${delay / 1000}s (attempt ${this.reconnectAttempts})`)
 
     this.reconnectTimer = setTimeout(async () => {
       try {
         await this.start()
       } catch (error) {
-        console.error(`Reconnect failed for ${this.accountId}:`, error)
+        console.error(`[${this.accountId}] Reconnect failed:`, error)
       }
     }, delay)
   }
@@ -93,7 +127,8 @@ export class EmailListener {
   private listenForNewEmails() {
     if (!this.imap) return
 
-    this.imap.on('mail', () => {
+    this.imap.on('mail', (numNewMsgs: number) => {
+      console.log(`[${this.accountId}] ${numNewMsgs} new message(s)`)
       this.fetchNewEmails()
     })
 
@@ -107,7 +142,7 @@ export class EmailListener {
     this.imap.search(['UNSEEN'], (err, results) => {
       if (err || !results || results.length === 0) return
 
-      const fetch = this.imap!.fetch(results, { bodies: '' })
+      const fetch = this.imap!.fetch(results, { bodies: '', markSeen: false })
 
       fetch.on('message', (msg) => {
         msg.on('body', (stream: any) => {
@@ -165,10 +200,24 @@ export class EmailListener {
         }
       })
 
+      console.log(`[${this.accountId}] Saved email: ${email.subject}`)
+
       // Update last sync time
       await prisma.emailAccount.update({
         where: { id: this.accountId },
         data: { lastSyncAt: new Date() }
+      })
+
+      // Send real-time event to frontend
+      sendEventToUser(this.userId, {
+        type: 'new_email',
+        email: {
+          id: email.id,
+          subject: email.subject,
+          fromAddress: email.fromAddress,
+          receivedAt: email.receivedAt,
+          isRead: email.isRead
+        }
       })
 
       // Process filter rules and push notifications
@@ -185,8 +234,14 @@ export class EmailListener {
         user: {
           include: {
             filterRules: {
-              where: { isActive: true },
-              orderBy: { priority: 'desc' }
+              where: {
+                isActive: true,
+                OR: [
+                  { emailAccountId: this.accountId },
+                  { emailAccountId: null }
+                ]
+              },
+              orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }]
             }
           }
         }
@@ -252,11 +307,30 @@ export class EmailListener {
 
   private async pushToChannel(email: any, channelId: string) {
     try {
-      const channel = await prisma.pushChannel.findUnique({
-        where: { id: channelId }
+      const templateSupport = hasPushTemplateSupport()
+      const templateRelation = hasChannelTemplateRelation()
+
+      const channel = await prisma.pushChannel.findFirst({
+        where: {
+          id: channelId,
+          userId: this.userId,
+          isActive: true,
+          OR: [
+            { emailAccountId: this.accountId },
+            { emailAccountId: null }
+          ]
+        },
+        include:
+          templateSupport && templateRelation
+            ? {
+                template: {
+                  select: { content: true, type: true, isActive: true }
+                }
+              }
+            : undefined
       })
 
-      if (!channel || !channel.isActive) return
+      if (!channel) return
 
       const canPush = await this.checkRateLimit(channelId)
       if (!canPush) {
@@ -265,17 +339,50 @@ export class EmailListener {
       }
 
       const config = JSON.parse(channel.config)
+      const channelTemplate = (channel as any).template as
+        | { content: string; isActive: boolean }
+        | null
+        | undefined
+      let resolvedTemplate = channelTemplate?.isActive ? channelTemplate.content : channel.cardTemplate
+      if (!resolvedTemplate && templateSupport) {
+        const scopedDefault = await prisma.pushTemplate.findFirst({
+          where: {
+            userId: this.userId,
+            type: channel.type,
+            isActive: true,
+            isDefault: true,
+            emailAccountId: this.accountId
+          },
+          select: { content: true }
+        })
+
+        if (scopedDefault?.content) {
+          resolvedTemplate = scopedDefault.content
+        } else {
+          const globalDefault = await prisma.pushTemplate.findFirst({
+            where: {
+              userId: this.userId,
+              type: channel.type,
+              isActive: true,
+              isDefault: true,
+              emailAccountId: null
+            },
+            select: { content: true }
+          })
+          resolvedTemplate = globalDefault?.content || null
+        }
+      }
       let success = false
 
       switch (channel.type) {
         case 'wechat':
-          success = await this.pushToWechat(email, config, channel.cardTemplate)
+          success = await this.pushToWechat(email, config, resolvedTemplate)
           break
         case 'feishu':
-          success = await this.pushToFeishu(email, config, channel.cardTemplate)
+          success = await this.pushToFeishu(email, config, resolvedTemplate)
           break
         case 'telegram':
-          success = await this.pushToTelegram(email, config, channel.cardTemplate)
+          success = await this.pushToTelegram(email, config, resolvedTemplate)
           break
       }
 
@@ -338,12 +445,13 @@ export class EmailListener {
   private async pushToFeishu(email: any, config: any, template: string | null): Promise<boolean> {
     try {
       const card = this.renderTemplate(email, template, 'feishu')
+      const parsedCard = JSON.parse(card)
       const response = await fetch(config.webhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           msg_type: 'interactive',
-          card: JSON.parse(card)
+          card: parsedCard
         })
       })
       return response.ok
@@ -395,12 +503,21 @@ export class EmailListener {
     }
 
     if (template) {
-      return template
+      const rendered = template
         .replace(/{from}/g, email.fromAddress)
         .replace(/{subject}/g, email.subject)
         .replace(/{time}/g, time)
         .replace(/{preview}/g, preview)
         .replace(/{body}/g, email.body || '')
+
+      if (format === 'feishu') {
+        try {
+          JSON.parse(rendered)
+        } catch {
+          return defaultTemplates.feishu
+        }
+      }
+      return rendered
     }
 
     return defaultTemplates[format] || defaultTemplates.markdown
@@ -425,9 +542,17 @@ export class EmailListener {
     await prisma.systemAlert.create({
       data: { type, severity, message }
     })
+    await createNotification({
+      userId: this.userId,
+      title: '系统告警',
+      message,
+      type: severity === 'error' ? 'error' : severity === 'warning' ? 'warning' : 'info',
+      metadata: { type }
+    })
   }
 
   stop() {
+    this.isManualStop = true
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null

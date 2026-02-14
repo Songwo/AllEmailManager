@@ -1,7 +1,7 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { Mail, Lock, User, ArrowRight, Loader2, Github } from 'lucide-react'
+import { Mail, Lock, User, ArrowRight, Loader2, ShieldCheck } from 'lucide-react'
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -15,12 +15,43 @@ export default function LoginPage() {
     password: '',
     name: ''
   })
+  const [requiresTwoFactor, setRequiresTwoFactor] = useState(false)
+  const [challengeToken, setChallengeToken] = useState('')
+  const [twoFactorCode, setTwoFactorCode] = useState('')
+  const [authUser, setAuthUser] = useState<{
+    id: string
+    email: string
+    name: string | null
+    avatarUrl?: string | null
+  } | null>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
 
     try {
+      if (requiresTwoFactor && isLogin) {
+        const response = await fetch('/api/auth?action=verify-2fa', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            challengeToken,
+            code: twoFactorCode
+          })
+        })
+
+        const data = await response.json()
+        if (response.ok) {
+          const { token, ...userData } = data
+          localStorage.setItem('user', JSON.stringify(userData))
+          localStorage.setItem('token', token)
+          router.push('/dashboard')
+          return
+        }
+        alert(data.error || '2FA 验证失败')
+        return
+      }
+
       const action = isLogin ? 'login' : 'register'
       const response = await fetch(`/api/auth?action=${action}`, {
         method: 'POST',
@@ -31,6 +62,12 @@ export default function LoginPage() {
       const data = await response.json()
 
       if (response.ok) {
+        if (data.requiresTwoFactor) {
+          setRequiresTwoFactor(true)
+          setChallengeToken(data.challengeToken)
+          setAuthUser(data.user)
+          return
+        }
         // Store user data and JWT token
         const { token, ...userData } = data
         localStorage.setItem('user', JSON.stringify(userData))
@@ -64,10 +101,14 @@ export default function LoginPage() {
             </div>
           </Link>
           <h1 className="text-2xl font-bold tracking-tight mb-2">
-            {isLogin ? '欢迎回来' : '创建账户'}
+            {requiresTwoFactor ? '二次验证' : isLogin ? '欢迎回来' : '创建账户'}
           </h1>
           <p className="text-muted-foreground text-sm">
-            {isLogin ? '请输入您的凭证以继续访问' : '注册以开始管理您的邮件'}
+            {requiresTwoFactor
+              ? '请输入 Google Authenticator 动态码或恢复码'
+              : isLogin
+              ? '请输入您的凭证以继续访问'
+              : '注册以开始管理您的邮件'}
           </p>
         </div>
 
@@ -75,7 +116,7 @@ export default function LoginPage() {
         <div className="bg-card border border-border shadow-sm rounded-2xl p-6 sm:p-8">
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            {!isLogin && (
+            {!isLogin && !requiresTwoFactor && (
               <motion.div
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: 'auto' }}
@@ -96,34 +137,55 @@ export default function LoginPage() {
               </motion.div>
             )}
 
-            <div className="space-y-2">
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <input
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  placeholder="邮箱地址"
-                  required
-                  className="w-full pl-10 pr-4 py-2.5 bg-secondary/50 border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-input text-sm transition-all placeholder:text-muted-foreground/50"
-                />
+            {requiresTwoFactor ? (
+              <div className="space-y-2">
+                <div className="text-xs text-muted-foreground">
+                  账号：{authUser?.email}
+                </div>
+                <div className="relative">
+                  <ShieldCheck className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <input
+                    type="text"
+                    value={twoFactorCode}
+                    onChange={(e) => setTwoFactorCode(e.target.value)}
+                    placeholder="6位动态码或恢复码"
+                    required
+                    className="w-full pl-10 pr-4 py-2.5 bg-secondary/50 border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-input text-sm transition-all placeholder:text-muted-foreground/50"
+                  />
+                </div>
               </div>
-            </div>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <input
+                      type="email"
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      placeholder="邮箱地址"
+                      required
+                      className="w-full pl-10 pr-4 py-2.5 bg-secondary/50 border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-input text-sm transition-all placeholder:text-muted-foreground/50"
+                    />
+                  </div>
+                </div>
 
-            <div className="space-y-2">
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <input
-                  type="password"
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  placeholder="密码"
-                  required
-                  minLength={8}
-                  className="w-full pl-10 pr-4 py-2.5 bg-secondary/50 border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-input text-sm transition-all placeholder:text-muted-foreground/50"
-                />
-              </div>
-            </div>
+                <div className="space-y-2">
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <input
+                      type="password"
+                      value={formData.password}
+                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                      placeholder="密码"
+                      required
+                      minLength={8}
+                      className="w-full pl-10 pr-4 py-2.5 bg-secondary/50 border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-input text-sm transition-all placeholder:text-muted-foreground/50"
+                    />
+                  </div>
+                </div>
+              </>
+            )}
 
             <button
               type="submit"
@@ -134,7 +196,7 @@ export default function LoginPage() {
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
                 <>
-                  {isLogin ? '登录' : '注册'}
+                  {requiresTwoFactor ? '验证并登录' : isLogin ? '登录' : '注册'}
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
@@ -143,13 +205,21 @@ export default function LoginPage() {
 
           <div className="mt-6 text-center text-sm">
             <span className="text-muted-foreground">
-              {isLogin ? '还没有账户？' : '已有账户？'}
+              {requiresTwoFactor ? '验证码异常？' : isLogin ? '还没有账户？' : '已有账户？'}
             </span>
             <button
-              onClick={() => setIsLogin(!isLogin)}
+              onClick={() => {
+                if (requiresTwoFactor) {
+                  setRequiresTwoFactor(false)
+                  setTwoFactorCode('')
+                  setChallengeToken('')
+                } else {
+                  setIsLogin(!isLogin)
+                }
+              }}
               className="ml-1 font-medium text-foreground hover:underline underline-offset-4"
             >
-              {isLogin ? '立即注册' : '立即登录'}
+              {requiresTwoFactor ? '返回账号密码登录' : isLogin ? '立即注册' : '立即登录'}
             </button>
           </div>
         </div>

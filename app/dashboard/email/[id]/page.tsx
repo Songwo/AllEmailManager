@@ -1,59 +1,94 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { ArrowLeft, Mail, Clock, User, Trash2, MailOpen, Paperclip, Send } from 'lucide-react'
+import {
+  ArrowLeft,
+  Mail,
+  Clock,
+  User,
+  Trash2,
+  MailOpen,
+  Paperclip,
+  Send,
+  Reply,
+  ReplyAll,
+  Forward
+} from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { api } from '@/lib/api-client'
+import { ComposeEmail } from '@/components/ui/compose-email'
+import { EmailBodyViewer } from '@/components/ui/email-body-viewer'
 
 interface EmailDetail {
-  id: string;
-  subject: string;
-  fromAddress: string;
-  toAddresses: string[];
-  body: string;
-  bodyHtml: string | null;
-  receivedAt: string;
-  isRead: boolean;
+  id: string
+  subject: string
+  fromAddress: string
+  toAddresses: string[]
+  body: string | null
+  bodyHtml: string | null
+  headers: Record<string, unknown> | null
+  receivedAt: string
+  isRead: boolean
+  messageId: string
   attachments: Array<{
-    filename: string;
-    size: number;
-    contentType: string;
-  }> | null;
+    filename: string
+    size: number
+    contentType: string
+  }> | null
   emailAccount: {
-    email: string;
-    provider: string;
-  };
+    id: string
+    email: string
+    provider: string
+  }
   pushLogs: Array<{
-    id: string;
-    status: string;
-    sentAt: string;
+    id: string
+    status: string
+    pushedAt: string
     channel: {
-      name: string;
-      type: string;
-    };
-  }>;
+      name: string
+      type: string
+    }
+  }>
 }
+
+interface EmailAccount {
+  id: string
+  email: string
+  provider: string
+}
+
+type ComposeMode = 'reply' | 'replyAll' | 'forward' | null
 
 export default function EmailDetailPage() {
   const params = useParams()
   const router = useRouter()
   const [email, setEmail] = useState<EmailDetail | null>(null)
+  const [accounts, setAccounts] = useState<EmailAccount[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState(false)
+  const [composeMode, setComposeMode] = useState<ComposeMode>(null)
 
   useEffect(() => {
-    const fetchEmail = async () => {
+    const fetchData = async () => {
       try {
         setLoading(true)
-        const data = await api.get<EmailDetail>(`/api/emails/${params.id}`)
-        setEmail(data)
+        const [emailData, accountsData] = await Promise.all([
+          api.get<EmailDetail>(`/api/emails/${params.id}`),
+          api.get<EmailAccount[]>('/api/email-accounts')
+        ])
 
-        // Auto-mark as read if unread
-        if (!data.isRead) {
-          await api.post(`/api/emails/${params.id}`, { action: 'markAsRead' })
-          setEmail({ ...data, isRead: true })
+        setEmail(emailData)
+        setAccounts(accountsData)
+
+        if (!emailData.isRead) {
+          try {
+            await api.post(`/api/emails/${params.id}`, { action: 'markAsRead' })
+            setEmail({ ...emailData, isRead: true })
+          } catch {
+            // Best effort.
+          }
         }
       } catch (err: any) {
         setError(err.message)
@@ -61,7 +96,7 @@ export default function EmailDetailPage() {
         setLoading(false)
       }
     }
-    fetchEmail()
+    fetchData()
   }, [params.id])
 
   const handleMarkAsUnread = async () => {
@@ -106,6 +141,18 @@ export default function EmailDetailPage() {
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
   }
 
+  const extractOriginalCc = (headers: Record<string, unknown> | null): string[] => {
+    if (!headers) return []
+    const cc = headers.cc
+    if (typeof cc === 'string') {
+      return cc
+        .split(',')
+        .map((v) => v.trim())
+        .filter(Boolean)
+    }
+    return []
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -135,7 +182,6 @@ export default function EmailDetailPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
       <div className="mb-6 flex items-center justify-between">
         <motion.button
           whileHover={{ scale: 1.02 }}
@@ -148,6 +194,36 @@ export default function EmailDetailPage() {
         </motion.button>
 
         <div className="flex items-center gap-3">
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => setComposeMode('reply')}
+            disabled={accounts.length === 0}
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Reply className="w-5 h-5" />
+            回复
+          </motion.button>
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => setComposeMode('replyAll')}
+            disabled={accounts.length === 0}
+            className="flex items-center gap-2 px-4 py-2 bg-secondary text-foreground rounded-lg hover:bg-secondary/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <ReplyAll className="w-5 h-5" />
+            回复全部
+          </motion.button>
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => setComposeMode('forward')}
+            disabled={accounts.length === 0}
+            className="flex items-center gap-2 px-4 py-2 bg-secondary text-foreground rounded-lg hover:bg-secondary/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Forward className="w-5 h-5" />
+            转发
+          </motion.button>
           <motion.button
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
@@ -171,20 +247,18 @@ export default function EmailDetailPage() {
         </div>
       </div>
 
-      {/* Email Content */}
       <div className="bg-background rounded-2xl border border-border shadow-sm">
-        {/* Email Header */}
         <div className="p-8 border-b border-border">
           <h1 className="text-2xl font-bold mb-6 text-foreground">
             {email.subject || '(无主题)'}
           </h1>
 
-          <div className="space-y-4">
+          <div className="grid lg:grid-cols-2 gap-4">
             <div className="flex items-start gap-3">
               <User className="w-5 h-5 text-muted-foreground mt-0.5" />
               <div className="flex-1">
                 <p className="text-sm text-muted-foreground">发件人</p>
-                <p className="font-medium text-foreground">{email.fromAddress}</p>
+                <p className="font-medium text-foreground break-all">{email.fromAddress}</p>
               </div>
             </div>
 
@@ -192,7 +266,7 @@ export default function EmailDetailPage() {
               <Mail className="w-5 h-5 text-muted-foreground mt-0.5" />
               <div className="flex-1">
                 <p className="text-sm text-muted-foreground">收件人</p>
-                <p className="font-medium text-foreground">
+                <p className="font-medium text-foreground break-all">
                   {email.toAddresses.join(', ')}
                 </p>
               </div>
@@ -209,8 +283,8 @@ export default function EmailDetailPage() {
             <div className="flex items-start gap-3">
               <Mail className="w-5 h-5 text-muted-foreground mt-0.5" />
               <div className="flex-1">
-                <p className="text-sm text-muted-foreground">邮箱账户</p>
-                <p className="font-medium text-foreground">
+                <p className="text-sm text-muted-foreground">所属邮箱</p>
+                <p className="font-medium text-foreground break-all">
                   {email.emailAccount.email} ({email.emailAccount.provider})
                 </p>
               </div>
@@ -218,22 +292,11 @@ export default function EmailDetailPage() {
           </div>
         </div>
 
-        {/* Email Body */}
         <div className="p-8 border-b border-border">
           <h3 className="text-lg font-semibold mb-4 text-foreground">邮件内容</h3>
-          {email.bodyHtml ? (
-            <div
-              className="prose prose-sm max-w-none text-foreground"
-              dangerouslySetInnerHTML={{ __html: email.bodyHtml }}
-            />
-          ) : (
-            <pre className="whitespace-pre-wrap font-sans text-sm text-foreground bg-secondary/30 p-4 rounded-lg">
-              {email.body}
-            </pre>
-          )}
+          <EmailBodyViewer body={email.body} bodyHtml={email.bodyHtml} />
         </div>
 
-        {/* Attachments */}
         {email.attachments && email.attachments.length > 0 && (
           <div className="p-8 border-b border-border">
             <h3 className="text-lg font-semibold mb-4 flex items-center gap-2 text-foreground">
@@ -261,7 +324,6 @@ export default function EmailDetailPage() {
           </div>
         )}
 
-        {/* Push Logs */}
         {email.pushLogs && email.pushLogs.length > 0 && (
           <div className="p-8">
             <h3 className="text-lg font-semibold mb-4 flex items-center gap-2 text-foreground">
@@ -275,26 +337,38 @@ export default function EmailDetailPage() {
                   className="flex items-center justify-between p-4 bg-secondary/30 rounded-lg border border-border"
                 >
                   <div className="flex items-center gap-3">
-                    <div className={`w-2 h-2 rounded-full ${
-                      log.status === 'success' ? 'bg-green-500' :
-                      log.status === 'failed' ? 'bg-red-500' : 'bg-yellow-500'
-                    }`} />
+                    <div
+                      className={`w-2 h-2 rounded-full ${
+                        log.status === 'success'
+                          ? 'bg-green-500'
+                          : log.status === 'failed'
+                          ? 'bg-red-500'
+                          : 'bg-yellow-500'
+                      }`}
+                    />
                     <div>
                       <p className="font-medium text-sm text-foreground">
                         {log.channel.name} ({log.channel.type})
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {formatDate(log.sentAt)}
+                        {formatDate(log.pushedAt)}
                       </p>
                     </div>
                   </div>
-                  <span className={`text-xs font-medium px-2 py-1 rounded ${
-                    log.status === 'success' ? 'bg-green-500/10 text-green-600' :
-                    log.status === 'failed' ? 'bg-red-500/10 text-red-600' :
-                    'bg-yellow-500/10 text-yellow-600'
-                  }`}>
-                    {log.status === 'success' ? '成功' :
-                     log.status === 'failed' ? '失败' : '处理中'}
+                  <span
+                    className={`text-xs font-medium px-2 py-1 rounded ${
+                      log.status === 'success'
+                        ? 'bg-green-500/10 text-green-600'
+                        : log.status === 'failed'
+                        ? 'bg-red-500/10 text-red-600'
+                        : 'bg-yellow-500/10 text-yellow-600'
+                    }`}
+                  >
+                    {log.status === 'success'
+                      ? '成功'
+                      : log.status === 'failed'
+                      ? '失败'
+                      : '处理中'}
                   </span>
                 </div>
               ))}
@@ -302,6 +376,25 @@ export default function EmailDetailPage() {
           </div>
         )}
       </div>
+
+      {composeMode && (
+        <ComposeEmail
+          isOpen={!!composeMode}
+          onClose={() => setComposeMode(null)}
+          accounts={accounts}
+          defaultAccountId={email.emailAccount.id}
+          mode={composeMode}
+          replyTo={{
+            emailId: email.id,
+            fromAddress: email.fromAddress,
+            subject: email.subject || '(无主题)',
+            body: email.body || '',
+            messageId: email.messageId
+          }}
+          originalTo={email.toAddresses}
+          originalCc={extractOriginalCc(email.headers)}
+        />
+      )}
     </div>
   )
 }

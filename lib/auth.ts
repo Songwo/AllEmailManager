@@ -8,6 +8,12 @@ interface TokenPayload {
     email: string
 }
 
+interface ChallengeTokenPayload {
+    userId: string
+    email: string
+    purpose: '2fa'
+}
+
 /**
  * Sign a JWT token using HMAC-SHA256
  */
@@ -52,6 +58,49 @@ export function verifyToken(token: string): TokenPayload | null {
         if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) return null
 
         return { userId: payload.userId, email: payload.email }
+    } catch {
+        return null
+    }
+}
+
+export function signChallengeToken(payload: ChallengeTokenPayload, expiresInSeconds = 300): string {
+    const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url')
+    const body = Buffer.from(JSON.stringify({
+        ...payload,
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + expiresInSeconds
+    })).toString('base64url')
+
+    const signature = crypto
+        .createHmac('sha256', JWT_SECRET)
+        .update(`${header}.${body}`)
+        .digest('base64url')
+
+    return `${header}.${body}.${signature}`
+}
+
+export function verifyChallengeToken(token: string): ChallengeTokenPayload | null {
+    try {
+        const parts = token.split('.')
+        if (parts.length !== 3) return null
+
+        const [header, body, signature] = parts
+        const expectedSig = crypto
+            .createHmac('sha256', JWT_SECRET)
+            .update(`${header}.${body}`)
+            .digest('base64url')
+
+        if (signature !== expectedSig) return null
+
+        const payload = JSON.parse(Buffer.from(body, 'base64url').toString())
+        if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) return null
+        if (payload.purpose !== '2fa') return null
+
+        return {
+            userId: payload.userId,
+            email: payload.email,
+            purpose: payload.purpose
+        }
     } catch {
         return null
     }

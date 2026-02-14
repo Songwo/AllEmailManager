@@ -7,6 +7,7 @@ export const dynamic = 'force-dynamic'
 
 const filterRuleSchema = z.object({
   name: z.string(),
+  emailAccountId: z.string().nullable().optional(),
   conditions: z.object({
     sender: z.array(z.string()).optional(),
     subject: z.array(z.string()).optional(),
@@ -30,9 +31,47 @@ export async function POST(request: Request) {
     const body = await request.json()
     const data = filterRuleSchema.parse(body)
 
+    if (data.emailAccountId) {
+      const account = await prisma.emailAccount.findFirst({
+        where: { id: data.emailAccountId, userId: user.userId },
+        select: { id: true }
+      })
+      if (!account) {
+        return NextResponse.json({ error: 'Email account not found' }, { status: 404 })
+      }
+    }
+
+    if (data.actions.pushChannels?.length) {
+      const channels = await prisma.pushChannel.findMany({
+        where: {
+          id: { in: data.actions.pushChannels },
+          userId: user.userId,
+          isActive: true
+        },
+        select: { id: true, emailAccountId: true }
+      })
+
+      if (channels.length !== data.actions.pushChannels.length) {
+        return NextResponse.json({ error: 'Contains invalid push channel' }, { status: 400 })
+      }
+
+      const outOfScope = channels.some(
+        (c) =>
+          c.emailAccountId !== null &&
+          c.emailAccountId !== data.emailAccountId
+      )
+      if (outOfScope) {
+        return NextResponse.json(
+          { error: 'Push channel scope mismatch with selected email account' },
+          { status: 400 }
+        )
+      }
+    }
+
     const rule = await prisma.filterRule.create({
       data: {
         userId: user.userId,
+        emailAccountId: data.emailAccountId || null,
         name: data.name,
         conditions: JSON.stringify(data.conditions),
         actions: JSON.stringify(data.actions),
@@ -62,8 +101,16 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const { searchParams } = new URL(request.url)
+    const emailAccountId = searchParams.get('emailAccountId')
+    const where: { userId: string; emailAccountId?: string | null } = { userId: user.userId }
+
+    if (emailAccountId && emailAccountId !== 'all') {
+      where.emailAccountId = emailAccountId === 'global' ? null : emailAccountId
+    }
+
     const rules = await prisma.filterRule.findMany({
-      where: { userId: user.userId },
+      where,
       orderBy: { priority: 'desc' }
     })
 
@@ -89,7 +136,7 @@ export async function PATCH(request: Request) {
     }
 
     const body = await request.json()
-    const { id, conditions, actions, ...updateData } = body
+    const { id, conditions, actions, emailAccountId, ...updateData } = body
 
     const existing = await prisma.filterRule.findFirst({
       where: { id, userId: user.userId }
@@ -101,6 +148,49 @@ export async function PATCH(request: Request) {
     const data: any = { ...updateData }
     if (conditions) data.conditions = JSON.stringify(conditions)
     if (actions) data.actions = JSON.stringify(actions)
+
+    if (emailAccountId !== undefined) {
+      if (emailAccountId) {
+        const account = await prisma.emailAccount.findFirst({
+          where: { id: emailAccountId, userId: user.userId },
+          select: { id: true }
+        })
+        if (!account) {
+          return NextResponse.json({ error: 'Email account not found' }, { status: 404 })
+        }
+      }
+      data.emailAccountId = emailAccountId || null
+    }
+
+    if (actions?.pushChannels?.length) {
+      const targetAccountId =
+        emailAccountId !== undefined ? emailAccountId || null : existing.emailAccountId
+
+      const channels = await prisma.pushChannel.findMany({
+        where: {
+          id: { in: actions.pushChannels },
+          userId: user.userId,
+          isActive: true
+        },
+        select: { id: true, emailAccountId: true }
+      })
+
+      if (channels.length !== actions.pushChannels.length) {
+        return NextResponse.json({ error: 'Contains invalid push channel' }, { status: 400 })
+      }
+
+      const outOfScope = channels.some(
+        (c) =>
+          c.emailAccountId !== null &&
+          c.emailAccountId !== targetAccountId
+      )
+      if (outOfScope) {
+        return NextResponse.json(
+          { error: 'Push channel scope mismatch with selected email account' },
+          { status: 400 }
+        )
+      }
+    }
 
     const rule = await prisma.filterRule.update({
       where: { id },

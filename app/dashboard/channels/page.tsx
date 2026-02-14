@@ -1,12 +1,28 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { Plus, Trash2, Power, Loader2, Send } from 'lucide-react'
-import { useState, useEffect, useCallback } from 'react'
+import { Plus, Trash2, Power, Loader2, Send, Filter, RefreshCw } from 'lucide-react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { api } from '@/lib/api-client'
 import { pushChannelTypes } from '@/lib/constants'
 
 type ChannelType = 'wechat' | 'feishu' | 'telegram'
+type ScopeType = 'all' | 'global' | string
+
+interface EmailAccount {
+  id: string
+  email: string
+  provider: string
+}
+
+interface PushTemplate {
+  id: string
+  name: string
+  type: ChannelType
+  emailAccountId: string | null
+  isDefault: boolean
+  isActive: boolean
+}
 
 interface PushChannel {
   id: string
@@ -15,21 +31,34 @@ interface PushChannel {
   config: Record<string, string>
   isActive: boolean
   cardTemplate: string | null
+  emailAccountId: string | null
+  templateId: string | null
+  template: {
+    id: string
+    name: string
+    type: ChannelType
+    emailAccountId: string | null
+  } | null
   createdAt: string
   _count: { pushLogs: number }
 }
 
 export default function PushChannels() {
   const [channels, setChannels] = useState<PushChannel[]>([])
+  const [templates, setTemplates] = useState<PushTemplate[]>([])
+  const [accounts, setAccounts] = useState<EmailAccount[]>([])
   const [loading, setLoading] = useState(true)
   const [showAddModal, setShowAddModal] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+  const [scope, setScope] = useState<ScopeType>('all')
 
   const [selectedType, setSelectedType] = useState<ChannelType>('wechat')
   const [formName, setFormName] = useState('')
   const [formConfig, setFormConfig] = useState<Record<string, string>>({})
+  const [formTemplateId, setFormTemplateId] = useState('')
   const [formTemplate, setFormTemplate] = useState('')
+  const [formEmailAccountId, setFormEmailAccountId] = useState<ScopeType>('global')
 
   const channelIcons: Record<ChannelType, string> = {
     wechat: '💬', feishu: '🚀', telegram: '✈️'
@@ -40,23 +69,45 @@ export default function PushChannels() {
     telegram: 'from-sky-500 to-cyan-500'
   }
 
-  const fetchChannels = useCallback(async () => {
+  const fetchBaseData = useCallback(async () => {
+    const [accountData, templateData] = await Promise.all([
+      api.get<EmailAccount[]>('/api/email-accounts'),
+      api.get<PushTemplate[]>('/api/push-templates')
+    ])
+    setAccounts(accountData)
+    setTemplates(templateData.filter((t) => t.isActive))
+  }, [])
+
+  const fetchChannels = useCallback(async (nextScope: ScopeType) => {
+    const params =
+      nextScope === 'all'
+        ? ''
+        : `?emailAccountId=${encodeURIComponent(nextScope === 'global' ? 'global' : nextScope)}`
+    const data = await api.get<PushChannel[]>(`/api/push-channels${params}`)
+    setChannels(data)
+  }, [])
+
+  const refreshAll = useCallback(async () => {
     try {
-      const data = await api.get<PushChannel[]>('/api/push-channels')
-      setChannels(data)
+      setLoading(true)
+      await Promise.all([fetchBaseData(), fetchChannels(scope)])
     } catch (err) {
-      console.error('Failed to fetch channels:', err)
+      console.error('Failed to refresh channels:', err)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [fetchBaseData, fetchChannels, scope])
 
-  useEffect(() => { fetchChannels() }, [fetchChannels])
+  useEffect(() => {
+    refreshAll()
+  }, [refreshAll])
 
   const resetForm = () => {
     setFormName('')
     setFormConfig({})
     setFormTemplate('')
+    setFormTemplateId('')
+    setFormEmailAccountId('global')
     setSelectedType('wechat')
     setError('')
   }
@@ -69,12 +120,14 @@ export default function PushChannels() {
       await api.post('/api/push-channels', {
         type: selectedType,
         name: formName,
+        emailAccountId: formEmailAccountId === 'global' ? null : formEmailAccountId,
+        templateId: formTemplateId || undefined,
         config: formConfig,
         cardTemplate: formTemplate || undefined
       })
       setShowAddModal(false)
       resetForm()
-      await fetchChannels()
+      await fetchChannels(scope)
     } catch (err: any) {
       setError(err.message || '添加失败')
     } finally {
@@ -88,7 +141,7 @@ export default function PushChannels() {
         id: channel.id,
         isActive: !channel.isActive
       })
-      await fetchChannels()
+      await fetchChannels(scope)
     } catch (err) {
       console.error('Toggle failed:', err)
     }
@@ -98,30 +151,79 @@ export default function PushChannels() {
     if (!confirm('确定删除此推送渠道？')) return
     try {
       await api.delete(`/api/push-channels?id=${id}`)
-      await fetchChannels()
+      await fetchChannels(scope)
     } catch (err) {
       console.error('Delete failed:', err)
     }
   }
 
-  const currentTypeConfig = pushChannelTypes.find(t => t.type === selectedType)
+  const currentTypeConfig = pushChannelTypes.find((t) => t.type === selectedType)
+
+  const availableTemplates = useMemo(() => {
+    return templates.filter((t) => {
+      if (t.type !== selectedType) return false
+      if (formEmailAccountId === 'global') return t.emailAccountId === null
+      return t.emailAccountId === null || t.emailAccountId === formEmailAccountId
+    })
+  }, [templates, selectedType, formEmailAccountId])
+
+  const accountMap = useMemo(() => {
+    const map = new Map<string, EmailAccount>()
+    for (const account of accounts) {
+      map.set(account.id, account)
+    }
+    return map
+  }, [accounts])
 
   return (
     <div>
       <div className="mb-8 flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight mb-2">推送渠道</h1>
-          <p className="text-muted-foreground">配置微信、飞书、Telegram 等推送渠道</p>
+          <p className="text-muted-foreground">按邮箱隔离配置微信、飞书、Telegram 推送渠道</p>
         </div>
-        <motion.button
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-xl font-medium shadow-sm hover:opacity-90 transition-all"
+        <div className="flex items-center gap-3">
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={refreshAll}
+            className="p-3 bg-secondary text-foreground rounded-xl hover:bg-secondary/80 transition-all"
+            title="刷新"
+          >
+            <RefreshCw className="w-5 h-5" />
+          </motion.button>
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-xl font-medium shadow-sm hover:opacity-90 transition-all"
+          >
+            <Plus className="w-5 h-5" />
+            添加渠道
+          </motion.button>
+        </div>
+      </div>
+
+      <div className="mb-6 p-4 rounded-xl border border-border bg-secondary/20 flex items-center gap-3">
+        <Filter className="w-4 h-4 text-muted-foreground" />
+        <span className="text-sm text-muted-foreground">配置范围:</span>
+        <select
+          value={scope}
+          onChange={async (e) => {
+            const nextScope = e.target.value
+            setScope(nextScope)
+            await fetchChannels(nextScope)
+          }}
+          className="px-3 py-2 bg-background border border-border rounded-lg text-sm"
         >
-          <Plus className="w-5 h-5" />
-          添加渠道
-        </motion.button>
+          <option value="all">全部渠道</option>
+          <option value="global">全局渠道</option>
+          {accounts.map((account) => (
+            <option key={account.id} value={account.id}>
+              {account.email}
+            </option>
+          ))}
+        </select>
       </div>
 
       {loading ? (
@@ -137,8 +239,9 @@ export default function PushChannels() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.1 }}
               whileHover={{ y: -4 }}
-              className={`bg-background rounded-2xl border border-border p-6 transition-all shadow-sm ${channel.isActive ? 'hover:border-primary/50' : 'opacity-60'
-                }`}
+              className={`bg-background rounded-2xl border border-border p-6 transition-all shadow-sm ${
+                channel.isActive ? 'hover:border-primary/50' : 'opacity-60'
+              }`}
             >
               <div className="flex items-start justify-between mb-4">
                 <div className={`w-14 h-14 rounded-xl bg-gradient-to-br ${channelColors[channel.type]} flex items-center justify-center text-3xl shadow-sm`}>
@@ -149,10 +252,11 @@ export default function PushChannels() {
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.9 }}
                     onClick={() => handleToggle(channel)}
-                    className={`p-2 rounded-lg transition-colors ${channel.isActive
+                    className={`p-2 rounded-lg transition-colors ${
+                      channel.isActive
                         ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
                         : 'bg-secondary text-muted-foreground'
-                      }`}
+                    }`}
                   >
                     <Power className="w-4 h-4" />
                   </motion.button>
@@ -181,16 +285,23 @@ export default function PushChannels() {
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">状态</span>
-                  <span className={`font-medium ${channel.isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`}>
-                    {channel.isActive ? '运行中' : '已暂停'}
+                  <span className="text-muted-foreground">绑定范围</span>
+                  <span className="font-medium text-right max-w-[160px] truncate">
+                    {channel.emailAccountId
+                      ? accountMap.get(channel.emailAccountId)?.email || '未知账号'
+                      : '全局'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">模板</span>
+                  <span className="font-medium text-right max-w-[160px] truncate">
+                    {channel.template?.name || (channel.cardTemplate ? '渠道内模板' : '默认模板')}
                   </span>
                 </div>
               </div>
             </motion.div>
           ))}
 
-          {/* Add New Card */}
           <motion.div
             whileHover={{ y: -4 }}
             onClick={() => setShowAddModal(true)}
@@ -204,7 +315,6 @@ export default function PushChannels() {
         </div>
       )}
 
-      {/* Add Channel Modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-6">
           <motion.div
@@ -222,6 +332,25 @@ export default function PushChannels() {
 
             <form onSubmit={handleAdd} className="space-y-6">
               <div>
+                <label className="block text-sm font-medium mb-2">配置范围</label>
+                <select
+                  value={formEmailAccountId}
+                  onChange={(e) => {
+                    setFormEmailAccountId(e.target.value)
+                    setFormTemplateId('')
+                  }}
+                  className="w-full px-4 py-3 bg-secondary/50 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-foreground"
+                >
+                  <option value="global">全局（适用于全部邮箱）</option>
+                  {accounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.email}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
                 <label className="block text-sm font-medium mb-3">选择平台</label>
                 <div className="grid grid-cols-3 gap-4">
                   {(['wechat', 'feishu', 'telegram'] as const).map((type) => (
@@ -229,11 +358,16 @@ export default function PushChannels() {
                       key={type}
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
-                      onClick={() => { setSelectedType(type); setFormConfig({}) }}
-                      className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${selectedType === type
+                      onClick={() => {
+                        setSelectedType(type)
+                        setFormConfig({})
+                        setFormTemplateId('')
+                      }}
+                      className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                        selectedType === type
                           ? 'border-primary bg-primary/5'
                           : 'border-border hover:border-primary/50'
-                        }`}
+                      }`}
                     >
                       <div className="text-4xl mb-2 text-center">{channelIcons[type]}</div>
                       <div className="text-sm font-medium text-center">
@@ -250,45 +384,63 @@ export default function PushChannels() {
                   type="text"
                   required
                   value={formName}
-                  onChange={e => setFormName(e.target.value)}
+                  onChange={(e) => setFormName(e.target.value)}
                   placeholder="例如：工作通知群"
                   className="w-full px-4 py-3 bg-secondary/50 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-foreground"
                 />
               </div>
 
-              {currentTypeConfig?.fields.map(field => (
+              {currentTypeConfig?.fields.map((field) => (
                 <div key={field.name}>
                   <label className="block text-sm font-medium mb-2">{field.label}</label>
                   <input
                     type={field.type}
                     required={field.required}
                     value={formConfig[field.name] || ''}
-                    onChange={e => setFormConfig(prev => ({ ...prev, [field.name]: e.target.value }))}
+                    onChange={(e) => setFormConfig((prev) => ({ ...prev, [field.name]: e.target.value }))}
                     placeholder={field.placeholder}
                     className="w-full px-4 py-3 bg-secondary/50 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-foreground"
                   />
                 </div>
               ))}
 
-              {currentTypeConfig?.instructions && (
-                <p className="text-sm text-muted-foreground">
-                  💡 {currentTypeConfig.instructions}
-                </p>
-              )}
+              <div>
+                <label className="block text-sm font-medium mb-2">关联模板（可选）</label>
+                <select
+                  value={formTemplateId}
+                  onChange={(e) => setFormTemplateId(e.target.value)}
+                  className="w-full px-4 py-3 bg-secondary/50 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-foreground"
+                >
+                  <option value="">不绑定模板（使用默认或下方覆盖）</option>
+                  {availableTemplates.map((template) => (
+                    <option key={template.id} value={template.id}>
+                      {template.name}
+                      {template.isDefault ? '（默认）' : ''}
+                      {template.emailAccountId ? '' : '（全局）'}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2">消息模板（可选）</label>
+                <label className="block text-sm font-medium mb-2">渠道内模板覆盖（可选）</label>
                 <textarea
                   rows={3}
                   value={formTemplate}
-                  onChange={e => setFormTemplate(e.target.value)}
-                  placeholder="自定义消息格式，留空使用默认模板"
+                  onChange={(e) => setFormTemplate(e.target.value)}
+                  placeholder="可直接写模板内容，优先级低于“关联模板”"
                   className="w-full px-4 py-3 bg-secondary/50 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-foreground resize-none"
                 />
                 <p className="mt-2 text-sm text-muted-foreground">
-                  可用变量: {'{from}'}, {'{subject}'}, {'{time}'}, {'{preview}'}
+                  可用变量: {'{from}'}, {'{subject}'}, {'{time}'}, {'{preview}'}, {'{body}'}
                 </p>
               </div>
+
+              {currentTypeConfig?.instructions && (
+                <p className="text-sm text-muted-foreground">
+                  {currentTypeConfig.instructions}
+                </p>
+              )}
 
               <div className="flex gap-4 pt-4">
                 <motion.button

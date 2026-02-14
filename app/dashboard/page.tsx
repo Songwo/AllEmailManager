@@ -82,13 +82,43 @@ export default function Dashboard() {
     // Initial fetch
     fetchData()
 
-    // Set up polling - refresh every 30 seconds
-    const pollInterval = setInterval(() => {
-      fetchData()
-    }, 30000)
+    // Connect to SSE for real-time updates
+    const token = localStorage.getItem('token')
+    if (!token) return
+
+    const eventSource = new EventSource(`/api/events?token=${encodeURIComponent(token)}`, {
+      withCredentials: true
+    })
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+
+        if (data.type === 'new_email') {
+          console.log('New email received:', data.email)
+          // Refresh data immediately
+          fetchData()
+        } else if (data.type === 'heartbeat') {
+          console.log('SSE heartbeat')
+        } else if (data.type === 'connected') {
+          console.log('SSE connected')
+        }
+      } catch (error) {
+        console.error('Error parsing SSE event:', error)
+      }
+    }
+
+    eventSource.onerror = () => {
+      // EventSource onerror does not expose useful details in browsers.
+      // Avoid noisy {} logs and simply close the broken stream.
+      console.warn('SSE connection dropped')
+      eventSource.close()
+    }
 
     // Cleanup on unmount
-    return () => clearInterval(pollInterval)
+    return () => {
+      eventSource.close()
+    }
   }, [])
 
   const formatTime = (dateStr: string) => {

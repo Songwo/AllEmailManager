@@ -1,56 +1,58 @@
 #!/usr/bin/env node
 
 /**
- * Email Listener Service
- *
- * This script starts email listeners for all active email accounts.
- * It should be run as a background service.
+ * Email listener bootstrap script.
+ * Starts listeners for all active and connected accounts.
  */
 
 import { prisma } from '../lib/prisma'
-import { startEmailListener } from '../lib/listener-manager'
+import { listenerManager } from '../lib/listener-manager'
 
 async function startAllListeners() {
   try {
-    console.log('🚀 Starting email listener service...')
+    console.log('Starting email listener service...')
 
-    // Get all active email accounts
     const accounts = await prisma.emailAccount.findMany({
       where: {
         isActive: true,
         status: 'connected'
+      },
+      select: {
+        id: true,
+        email: true,
+        userId: true
       }
     })
 
-    console.log(`📧 Found ${accounts.length} active email accounts`)
+    console.log(`Found ${accounts.length} active email accounts`)
 
-    // Start listener for each account
     for (const account of accounts) {
       try {
-        await startEmailListener(account.id)
-        console.log(`✅ Listener started for: ${account.email}`)
-      } catch (error: any) {
-        console.error(`❌ Failed to start listener for ${account.email}:`, error.message)
+        await listenerManager.start(account.id, account.userId)
+        console.log(`Listener started for: ${account.email}`)
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error)
+        console.error(`Failed to start listener for ${account.email}:`, message)
       }
     }
 
-    console.log('✨ Email listener service started successfully')
-  } catch (error) {
-    console.error('❌ Failed to start email listener service:', error)
+    console.log('Email listener service started successfully')
+  } catch (error: unknown) {
+    console.error('Failed to start email listener service:', error)
     process.exit(1)
   }
 }
 
-// Start the service
 startAllListeners()
 
-// Keep the process running
 process.on('SIGTERM', () => {
-  console.log('📴 Shutting down email listener service...')
+  console.log('SIGTERM received, shutting down listener service...')
+  listenerManager.stopAll()
   process.exit(0)
 })
 
 process.on('SIGINT', () => {
-  console.log('📴 Shutting down email listener service...')
+  console.log('SIGINT received, shutting down listener service...')
+  listenerManager.stopAll()
   process.exit(0)
 })

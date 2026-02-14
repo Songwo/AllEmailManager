@@ -11,9 +11,17 @@ model User {
   email         String         @unique
   name          String?
   password      String?
+  avatarUrl     String?
+  twoFactorEnabled    Boolean   @default(false)
+  twoFactorSecret     String?
+  twoFactorTempSecret String?
+  recoveryCodes       String?
+  twoFactorVerifiedAt DateTime?
   emailAccounts EmailAccount[]
   pushChannels  PushChannel[]
+  pushTemplates PushTemplate[]
   filterRules   FilterRule[]
+  notifications Notification[]
   settings      UserSettings?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
@@ -55,6 +63,9 @@ model EmailAccount {
   status            String    @default("connected")
   errorMessage      String?
   emails            Email[]
+  pushChannels      PushChannel[]
+  filterRules       FilterRule[]
+  pushTemplates     PushTemplate[]
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -84,31 +95,59 @@ model Email {
 }
 
 model PushChannel {
-  id           String    @id @default(cuid())
-  userId       String
-  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type         String
-  name         String
-  config       String
-  isActive     Boolean   @default(true)
-  cardTemplate String?
-  pushLogs     PushLog[]
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id             String       @id @default(cuid())
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emailAccountId String?
+  emailAccount   EmailAccount? @relation(fields: [emailAccountId], references: [id], onDelete: SetNull)
+  templateId     String?
+  template       PushTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  type           String
+  name           String
+  config         String
+  isActive       Boolean      @default(true)
+  cardTemplate   String?
+  pushLogs       PushLog[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([userId, emailAccountId, type])
 }
 
 model FilterRule {
-  id         String   @id @default(cuid())
-  userId     String
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name       String
-  isActive   Boolean  @default(true)
-  conditions String
-  actions    String
-  priority   Int      @default(0)
-  matchCount Int      @default(0)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id             String       @id @default(cuid())
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emailAccountId String?
+  emailAccount   EmailAccount? @relation(fields: [emailAccountId], references: [id], onDelete: SetNull)
+  name           String
+  isActive       Boolean      @default(true)
+  conditions     String
+  actions        String
+  priority       Int          @default(0)
+  matchCount     Int          @default(0)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([userId, emailAccountId, priority])
+}
+
+model PushTemplate {
+  id             String       @id @default(cuid())
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emailAccountId String?
+  emailAccount   EmailAccount? @relation(fields: [emailAccountId], references: [id], onDelete: SetNull)
+  name           String
+  type           String
+  content        String
+  isDefault      Boolean      @default(false)
+  isActive       Boolean      @default(true)
+  channels       PushChannel[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([userId, emailAccountId, type, isActive])
 }
 
 model PushLog {
@@ -144,4 +183,19 @@ model SystemAlert {
   isResolved Boolean   @default(false)
   createdAt  DateTime  @default(now())
   resolvedAt DateTime?
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  message   String
+  type      String   @default("info")
+  isRead    Boolean  @default(false)
+  metadata  String?
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId, isRead, createdAt])
 }
