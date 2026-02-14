@@ -4,6 +4,7 @@ import { Mail, Plus, Settings, Bell, Filter, TrendingUp, Search, Menu, LogOut, C
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
+import { OnboardingGuide } from '@/components/ui/onboarding-guide'
 
 export default function DashboardLayout({
     children,
@@ -47,6 +48,9 @@ export default function DashboardLayout({
 
     return (
         <div className="min-h-screen bg-muted/30 flex text-foreground selection:bg-zinc-900 selection:text-zinc-50 dark:selection:bg-zinc-100 dark:selection:text-zinc-900">
+            {/* Onboarding Guide */}
+            <OnboardingGuide />
+
             {/* Sidebar */}
             <aside className="fixed left-0 top-0 h-full w-64 bg-background border-r border-border p-4 flex flex-col z-20">
                 <Link href="/dashboard" className="flex items-center gap-3 px-2 mb-8 mt-2">
