@@ -8,6 +8,7 @@ EmailHub 是一个基于 Next.js + Prisma + SQLite 的多邮箱聚合管理平�
 
 ## Table of Contents / 目录
 
+- [Production Guide / 生产部署指南](#production-guide--生产部署指南)
 - [Version / 版本](#version--版本)
 - [What This Project Does / 项目功能](#what-this-project-does--项目功能)
 - [Tech Stack / 技术栈](#tech-stack--技术栈)
@@ -19,6 +20,11 @@ EmailHub 是一个基于 Next.js + Prisma + SQLite 的多邮箱聚合管理平�
 - [Backup and Restore / 备份与恢复](#backup-and-restore--备份与恢复)
 - [Troubleshooting / 常见问题](#troubleshooting--常见问题)
 - [Security Checklist / 安全检查清单](#security-checklist--安全检查清单)
+
+## Production Guide / 生产部署指南
+
+- EN: For release and production rollout, use `README_PRODUCTION.md`.
+- 中文: 发布上线请使用 `README_PRODUCTION.md`（生产环境专用详细教程）。
 
 ## Version / 版本
 
