@@ -1,8 +1,9 @@
 'use client'
 
-import { Mail, Bell, TrendingUp, Settings, Loader2, Search, ChevronDown } from 'lucide-react'
+import { Mail, Bell, TrendingUp, Settings, Loader2, Search, ChevronDown, PenSquare } from 'lucide-react'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { ComposeEmail } from '@/components/ui/compose-email'
 
 interface AnalyticsData {
   overview: {
@@ -63,6 +64,10 @@ export default function Dashboard() {
 
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Compose email state
+  const [showCompose, setShowCompose] = useState(false)
+  const [composeAccounts, setComposeAccounts] = useState<{ id: string; email: string; provider: string }[]>([])
+
   // Build email query URL from current filters
   const buildEmailUrl = useCallback((keyword: string, range: string, accountId: string) => {
     const params = new URLSearchParams({ limit: '50' })
@@ -116,6 +121,7 @@ export default function Dashboard() {
         })
         if (analytics.accounts) {
           setAccounts(analytics.accounts)
+          setComposeAccounts(analytics.accounts.map(a => ({ id: a.id, email: a.email, provider: a.provider })))
         }
       }
 
@@ -285,6 +291,14 @@ export default function Dashboard() {
             <h2 className="text-base font-semibold">
               最近邮件
             </h2>
+            <button
+              onClick={() => setShowCompose(true)}
+              disabled={composeAccounts.length === 0}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <PenSquare className="w-4 h-4" />
+              写邮件
+            </button>
           </div>
 
           {/* Filter Bar */}
@@ -388,6 +402,13 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* Compose Email Modal */}
+      <ComposeEmail
+        isOpen={showCompose}
+        onClose={() => setShowCompose(false)}
+        accounts={composeAccounts}
+      />
     </div>
   )
 }
