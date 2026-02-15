@@ -10,9 +10,16 @@ services:
       - .env
     environment:
       NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: ${DATABASE_URL:-file:./dev.db}
       NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-CHANGE_ME_BEFORE_PROD}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-CHANGE_ME_BEFORE_PROD}
+      UPLOAD_DIR: ${UPLOAD_DIR:-/data/uploads}
+      MAX_UPLOAD_SIZE: ${MAX_UPLOAD_SIZE:-10485760}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
     volumes:
       - emailhub_data:/data
     restart: unless-stopped
@@ -23,7 +30,8 @@ services:
       retries: 5
       start_period: 30s
 
-  # Optional Redis service. Enable with: docker compose --profile with-redis up -d
+  # Optional Redis service. Enable with:
+  # docker compose --profile with-redis up -d --build
   redis:
     image: redis:7-alpine
     container_name: emailhub-redis

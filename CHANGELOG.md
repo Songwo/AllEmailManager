@@ -14,6 +14,33 @@
 - 邮件搜索功能
 - 移动端适配
 
+## [2.0.0] - 2026-02-15
+
+### 新增
+- 双语（中文/English）README，新手级部署说明
+- Docker 快速开始章节（从 `.env` 到 `docker compose up` 的完整步骤）
+- Docker 文件说明章节（`Dockerfile`、`docker-compose.yml`、`docker/entrypoint.sh`）
+- 统一环境变量模板，补充运行参数和可选参数（如 `UPLOAD_DIR`、`MAX_UPLOAD_SIZE`）
+
+### 变更
+- 部署文档与当前代码实现对齐：
+  - 数据库基于 SQLite（`dev.db`）与 Prisma SQLite 适配器
+  - Docker 启动时执行 `prisma db push --skip-generate`
+  - 上传目录持久化到 `/data/uploads`
+- `docker-compose.yml` 增强默认环境变量映射与可读性
+- `docs/deployment/README.md` 更新为稳定入口并指向新文档结构
+
+### 修复
+- 修复 ComposeEmail 弹窗的循环渲染问题（`Maximum update depth exceeded`）
+  - 原因：默认数组参数在每次渲染创建新引用，导致 effect 反复触发
+  - 处理：改为稳定常量引用，避免无限 setState 循环
+
+### 技术栈（2.0 当前）
+- **前端**: Next.js 16 + React 19 + Tailwind CSS 4
+- **后端**: Next.js API Routes + Node.js IMAP/SMTP
+- **数据库**: SQLite + Prisma ORM (`@prisma/adapter-better-sqlite3`)
+- **认证**: 自定义 JWT（HMAC-SHA256）+ 可选 TOTP 2FA
+
 ## [0.1.0] - 2026-02-13
 
 ### 新增
@@ -151,5 +178,6 @@
 
 ---
 
-[未发布]: https://github.com/your-username/email-manager/compare/v0.1.0...HEAD
+[未发布]: https://github.com/your-username/email-manager/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/your-username/email-manager/releases/tag/v2.0.0
 [0.1.0]: https://github.com/your-username/email-manager/releases/tag/v0.1.0

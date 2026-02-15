@@ -29,6 +29,8 @@ interface ComposeEmailProps {
   originalCc?: string[];
 }
 
+const EMPTY_ADDRESS_LIST: string[] = []
+
 function normalizeAddress(raw: string): string {
   const match = raw.match(/<([^>]+)>/)
   if (match?.[1]) return match[1].trim()
@@ -51,8 +53,8 @@ export function ComposeEmail({
   defaultAccountId,
   replyTo,
   mode = 'compose',
-  originalTo = [],
-  originalCc = []
+  originalTo = EMPTY_ADDRESS_LIST,
+  originalCc = EMPTY_ADDRESS_LIST
 }: ComposeEmailProps) {
   const { showToast } = useToast()
   const [sending, setSending] = useState(false)
@@ -157,8 +159,9 @@ export function ComposeEmail({
         body: '',
         includeOriginal: false
       })
-    } catch (error: any) {
-      showToast('error', '发送失败: ' + error.message)
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : '未知错误'
+      showToast('error', '发送失败: ' + message)
     } finally {
       setSending(false)
     }
