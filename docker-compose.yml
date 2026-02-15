@@ -1,58 +1,36 @@
-version: '3.8'
-
 services:
-  # PostgreSQL Database
-  postgres:
-    image: postgres:16-alpine
-    container_name: email-manager-db
-    environment:
-      POSTGRES_USER: emailmanager
-      POSTGRES_PASSWORD: your_secure_password
-      POSTGRES_DB: email_manager
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-    networks:
-      - email-manager-network
-    restart: unless-stopped
-
-  # Redis Cache
-  redis:
-    image: redis:7-alpine
-    container_name: email-manager-redis
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    networks:
-      - email-manager-network
-    restart: unless-stopped
-
-  # Next.js Application
   app:
-    build: .
-    container_name: email-manager-app
-    environment:
-      DATABASE_URL: postgresql://emailmanager:your_secure_password@postgres:5432/email_manager
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
-      NEXTAUTH_URL: ${NEXTAUTH_URL}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: emailhub-app
     ports:
       - "3000:3000"
-    depends_on:
-      - postgres
-      - redis
-    networks:
-      - email-manager-network
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-CHANGE_ME_BEFORE_PROD}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-CHANGE_ME_BEFORE_PROD}
+    volumes:
+      - emailhub_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/login || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Optional Redis service. Enable with: docker compose --profile with-redis up -d
+  redis:
+    image: redis:7-alpine
+    container_name: emailhub-redis
+    profiles: ["with-redis"]
+    ports:
+      - "6379:6379"
     restart: unless-stopped
 
 volumes:
-  postgres_data:
-  redis_data:
-
-networks:
-  email-manager-network:
-    driver: bridge
+  emailhub_data:

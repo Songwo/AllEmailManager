@@ -1,6 +1,7 @@
 import CryptoJS from 'crypto-js'
+import { env } from './env'
 
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'default-key-change-in-production'
+const ENCRYPTION_KEY = env.ENCRYPTION_KEY
 
 export function encryptPassword(password: string): string {
   return CryptoJS.AES.encrypt(password, ENCRYPTION_KEY).toString()

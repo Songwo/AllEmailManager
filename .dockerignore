@@ -1,0 +1,32 @@
+# dependencies
+node_modules
+npm-debug.log*
+
+# build outputs
+.next
+out
+coverage
+
+# local environment
+.env
+.env.local
+.env.*.local
+
+# local databases
+dev.db
+*.sqlite
+*.sqlite3
+
+# vcs and editor
+.git
+.gitignore
+.vscode
+.idea
+
+# docs and reports not needed in image build context
+_archive
+docs
+
+# misc
+*.log
+*.tmp

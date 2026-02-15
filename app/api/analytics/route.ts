@@ -1,125 +1,135 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { getUserFromRequest } from '@/lib/auth'
+
+export const dynamic = 'force-dynamic'
 
 export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url)
-    const userId = searchParams.get('userId')
-
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'User ID is required' },
-        { status: 400 }
-      )
+    const user = getUserFromRequest(request)
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get email statistics
-    const totalEmails = await prisma.email.count({
-      where: {
-        emailAccount: {
-          userId
+    const userId = user.userId
+
+    // Overview stats
+    const [totalEmails, unreadEmails, todayEmails, activeAccounts, totalAccounts] = await Promise.all([
+      prisma.email.count({
+        where: { emailAccount: { userId } }
+      }),
+      prisma.email.count({
+        where: { emailAccount: { userId }, isRead: false }
+      }),
+      prisma.email.count({
+        where: {
+          emailAccount: { userId },
+          receivedAt: {
+            gte: new Date(new Date().setHours(0, 0, 0, 0))
+          }
         }
-      }
-    })
+      }),
+      prisma.emailAccount.count({
+        where: { userId, isActive: true, status: 'connected' }
+      }),
+      prisma.emailAccount.count({
+        where: { userId }
+      })
+    ])
 
-    const unreadEmails = await prisma.email.count({
-      where: {
-        emailAccount: {
-          userId
-        },
-        isRead: false
-      }
-    })
-
-    const todayStart = new Date()
-    todayStart.setHours(0, 0, 0, 0)
-
-    const todayEmails = await prisma.email.count({
-      where: {
-        emailAccount: {
-          userId
-        },
-        receivedAt: {
-          gte: todayStart
-        }
-      }
-    })
-
-    const activeAccounts = await prisma.emailAccount.count({
-      where: {
-        userId,
-        isActive: true,
-        status: 'connected'
-      }
-    })
-
-    // Get push statistics
-    const totalPushes = await prisma.pushLog.count({
-      where: {
-        channel: {
-          userId
-        }
-      }
-    })
-
-    const successfulPushes = await prisma.pushLog.count({
-      where: {
-        channel: {
-          userId
-        },
-        status: 'success'
-      }
-    })
+    // Push stats
+    const [totalPushes, successfulPushes, failedPushes] = await Promise.all([
+      prisma.pushLog.count({
+        where: { channel: { userId } }
+      }),
+      prisma.pushLog.count({
+        where: { channel: { userId }, status: 'success' }
+      }),
+      prisma.pushLog.count({
+        where: { channel: { userId }, status: 'failed' }
+      })
+    ])
 
     const successRate = totalPushes > 0
       ? ((successfulPushes / totalPushes) * 100).toFixed(1)
-      : '0'
+      : '100.0'
 
-    // Get email trend (last 7 days)
+    // Email trend (last 7 days) - using Prisma groupBy with SQLite-compatible approach
     const sevenDaysAgo = new Date()
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+    sevenDaysAgo.setHours(0, 0, 0, 0)
 
-    const emailTrend = await prisma.$queryRaw`
-      SELECT
-        DATE(received_at) as date,
-        COUNT(*) as count
-      FROM "Email"
-      WHERE email_account_id IN (
-        SELECT id FROM "EmailAccount" WHERE user_id = ${userId}
-      )
-      AND received_at >= ${sevenDaysAgo}
-      GROUP BY DATE(received_at)
-      ORDER BY date ASC
-    `
+    // Get recent emails and group in JS for SQLite compatibility
+    const recentEmails = await prisma.email.findMany({
+      where: {
+        emailAccount: { userId },
+        receivedAt: { gte: sevenDaysAgo }
+      },
+      select: { receivedAt: true },
+      orderBy: { receivedAt: 'asc' }
+    })
 
-    // Get top senders
-    const topSenders = await prisma.$queryRaw`
-      SELECT
-        "from" as sender,
-        COUNT(*) as count
-      FROM "Email"
-      WHERE email_account_id IN (
-        SELECT id FROM "EmailAccount" WHERE user_id = ${userId}
-      )
-      GROUP BY "from"
-      ORDER BY count DESC
-      LIMIT 10
-    `
+    // Group by date in JavaScript
+    const trendMap: Record<string, number> = {}
+    for (let i = 0; i < 7; i++) {
+      const d = new Date()
+      d.setDate(d.getDate() - (6 - i))
+      const dateStr = d.toISOString().split('T')[0]
+      trendMap[dateStr] = 0
+    }
+    for (const e of recentEmails) {
+      const dateStr = new Date(e.receivedAt).toISOString().split('T')[0]
+      if (trendMap[dateStr] !== undefined) {
+        trendMap[dateStr]++
+      }
+    }
+    const emailTrend = Object.entries(trendMap).map(([date, count]) => ({ date, count }))
+
+    // Top senders
+    const allEmails = await prisma.email.findMany({
+      where: { emailAccount: { userId } },
+      select: { fromAddress: true },
+      take: 5000
+    })
+
+    const senderMap: Record<string, number> = {}
+    for (const e of allEmails) {
+      senderMap[e.fromAddress] = (senderMap[e.fromAddress] || 0) + 1
+    }
+    const topSenders = Object.entries(senderMap)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 10)
+      .map(([sender, count]) => ({ sender, count }))
+
+    // Account breakdown
+    const accounts = await prisma.emailAccount.findMany({
+      where: { userId },
+      select: {
+        id: true,
+        email: true,
+        provider: true,
+        status: true,
+        _count: { select: { emails: true } }
+      }
+    })
 
     return NextResponse.json({
       overview: {
         totalEmails,
         unreadEmails,
         todayEmails,
-        activeAccounts
+        activeAccounts,
+        totalAccounts
       },
       pushStats: {
         totalPushes,
         successfulPushes,
+        failedPushes,
         successRate
       },
       emailTrend,
-      topSenders
+      topSenders,
+      accounts
     })
   } catch (error: any) {
     console.error('Error fetching analytics:', error)
