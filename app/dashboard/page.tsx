@@ -1,7 +1,7 @@
 'use client'
 
-import { Mail, Bell, TrendingUp, Settings, Loader2 } from 'lucide-react'
-import { useState, useEffect } from 'react'
+import { Mail, Bell, TrendingUp, Settings, Loader2, Search, ChevronDown } from 'lucide-react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 
 interface AnalyticsData {
@@ -11,6 +11,7 @@ interface AnalyticsData {
     todayEmails: number
     activeAccounts: number
   }
+  accounts?: AccountItem[]
 }
 
 interface EmailItem {
@@ -27,6 +28,20 @@ interface EmailItem {
   }
 }
 
+interface AccountItem {
+  id: string
+  email: string
+  provider: string
+  status: string
+}
+
+const DATE_RANGE_OPTIONS = [
+  { value: 'all', label: '全部' },
+  { value: 'today', label: '今天' },
+  { value: '7days', label: '最近7天' },
+  { value: '30days', label: '最近30天' },
+] as const
+
 export default function Dashboard() {
   const router = useRouter()
   const [user, setUser] = useState<{ name: string } | null>(null)
@@ -38,8 +53,47 @@ export default function Dashboard() {
   })
   const [emails, setEmails] = useState<EmailItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [emailsLoading, setEmailsLoading] = useState(false)
 
-  // Fetch data function
+  // Filter states
+  const [searchKeyword, setSearchKeyword] = useState('')
+  const [dateRange, setDateRange] = useState<string>('all')
+  const [selectedAccountId, setSelectedAccountId] = useState('')
+  const [accounts, setAccounts] = useState<AccountItem[]>([])
+
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Build email query URL from current filters
+  const buildEmailUrl = useCallback((keyword: string, range: string, accountId: string) => {
+    const params = new URLSearchParams({ limit: '50' })
+    if (keyword.trim()) params.set('search', keyword.trim())
+    if (range !== 'all') params.set('dateRange', range)
+    if (accountId) params.set('emailAccountId', accountId)
+    return `/api/emails?${params.toString()}`
+  }, [])
+
+  // Fetch only emails with current filters
+  const fetchEmails = useCallback(async (keyword: string, range: string, accountId: string) => {
+    const token = localStorage.getItem('token')
+    if (!token) return
+
+    setEmailsLoading(true)
+    try {
+      const res = await fetch(buildEmailUrl(keyword, range, accountId), {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setEmails(data.emails || [])
+      }
+    } catch (error) {
+      console.error('Failed to fetch emails:', error)
+    } finally {
+      setEmailsLoading(false)
+    }
+  }, [buildEmailUrl])
+
+  // Fetch analytics + initial emails
   const fetchData = async () => {
     const token = localStorage.getItem('token')
     if (!token) return
@@ -49,7 +103,7 @@ export default function Dashboard() {
 
       const [analyticsRes, emailsRes] = await Promise.all([
         fetch('/api/analytics', { headers }),
-        fetch('/api/emails?limit=10', { headers })
+        fetch(buildEmailUrl(searchKeyword, dateRange, selectedAccountId), { headers })
       ])
 
       if (analyticsRes.ok) {
@@ -60,6 +114,9 @@ export default function Dashboard() {
           todayReceived: analytics.overview.todayEmails,
           activeAccounts: analytics.overview.activeAccounts
         })
+        if (analytics.accounts) {
+          setAccounts(analytics.accounts)
+        }
       }
 
       if (emailsRes.ok) {
@@ -71,6 +128,32 @@ export default function Dashboard() {
     } finally {
       setLoading(false)
     }
+  }
+
+  // Debounced search handler
+  const handleSearchChange = (value: string) => {
+    setSearchKeyword(value)
+    if (debounceTimer.current) clearTimeout(debounceTimer.current)
+    debounceTimer.current = setTimeout(() => {
+      fetchEmails(value, dateRange, selectedAccountId)
+    }, 300)
+  }
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      if (debounceTimer.current) clearTimeout(debounceTimer.current)
+      fetchEmails(searchKeyword, dateRange, selectedAccountId)
+    }
+  }
+
+  const handleDateRangeChange = (range: string) => {
+    setDateRange(range)
+    fetchEmails(searchKeyword, range, selectedAccountId)
+  }
+
+  const handleAccountChange = (accountId: string) => {
+    setSelectedAccountId(accountId)
+    fetchEmails(searchKeyword, dateRange, accountId)
   }
 
   useEffect(() => {
@@ -118,6 +201,7 @@ export default function Dashboard() {
     // Cleanup on unmount
     return () => {
       eventSource.close()
+      if (debounceTimer.current) clearTimeout(debounceTimer.current)
     }
   }, [])
 
@@ -196,20 +280,68 @@ export default function Dashboard() {
 
       {/* Email List */}
       <div className="bg-background rounded-xl border border-border overflow-hidden">
-        <div className="p-5 border-b border-border flex items-center justify-between bg-muted/10">
-          <h2 className="text-base font-semibold">
-            最近邮件
-          </h2>
-          <button
-            onClick={() => router.push('/dashboard')}
-            className="text-sm text-primary hover:underline"
-          >
-            查看全部
-          </button>
+        <div className="p-5 border-b border-border bg-muted/10">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base font-semibold">
+              最近邮件
+            </h2>
+          </div>
+
+          {/* Filter Bar */}
+          <div className="flex flex-col sm:flex-row gap-3">
+            {/* Search Input */}
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="搜索主题、发件人或正文..."
+                value={searchKeyword}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                onKeyDown={handleSearchKeyDown}
+                className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors"
+              />
+            </div>
+
+            {/* Date Range Buttons */}
+            <div className="flex rounded-lg border border-border overflow-hidden flex-shrink-0">
+              {DATE_RANGE_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() => handleDateRangeChange(option.value)}
+                  className={`px-3 py-2 text-xs font-medium transition-colors ${
+                    dateRange === option.value
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-background text-muted-foreground hover:bg-muted/50'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Account Selector */}
+            {accounts.length > 0 && (
+              <div className="relative flex-shrink-0">
+                <select
+                  value={selectedAccountId}
+                  onChange={(e) => handleAccountChange(e.target.value)}
+                  className="appearance-none pl-3 pr-8 py-2 text-sm rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors cursor-pointer"
+                >
+                  <option value="">全部邮箱</option>
+                  {accounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.email}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="divide-y divide-border">
-          {loading ? (
+          {loading || emailsLoading ? (
             <div className="p-8 text-center text-muted-foreground">
               <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />
               加载中...

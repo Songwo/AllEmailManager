@@ -1,14 +1,7 @@
 import { prisma } from './prisma'
+import type { CreateNotificationInput, NotificationType } from './types'
 
-export type NotificationType = 'info' | 'success' | 'warning' | 'error'
-
-interface CreateNotificationInput {
-  userId: string
-  title: string
-  message: string
-  type?: NotificationType
-  metadata?: Record<string, unknown> | null
-}
+export type { NotificationType }
 
 export async function createNotification(input: CreateNotificationInput) {
   try {

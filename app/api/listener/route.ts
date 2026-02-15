@@ -55,9 +55,19 @@ export async function POST(request: Request) {
         })
         return NextResponse.json({ success: true, message: 'Listener restarted' })
 
-      case 'status':
-        const status = listenerManager.getStatus(accountId)
-        return NextResponse.json({ status })
+      case 'status': {
+        const detailed = listenerManager.getDetailedStatus(accountId)
+        return NextResponse.json(detailed)
+      }
+
+      case 'setInterval': {
+        const interval = body.interval
+        if (!interval || typeof interval !== 'number' || interval < 10000 || interval > 300000) {
+          return NextResponse.json({ error: 'interval 需为 10000-300000 之间的毫秒数' }, { status: 400 })
+        }
+        listenerManager.setPollingInterval(accountId, interval)
+        return NextResponse.json({ success: true, message: `轮询间隔已设为 ${interval / 1000}s` })
+      }
 
       default:
         return NextResponse.json({ error: 'Invalid action' }, { status: 400 })

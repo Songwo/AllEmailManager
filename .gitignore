@@ -43,9 +43,6 @@ next-env.d.ts
 
 /app/generated/prisma
 
-# Prisma
-prisma/migrations/
-
 # IDE
 .vscode/
 .idea/

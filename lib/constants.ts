@@ -1,4 +1,6 @@
-export const emailProviders = [
+import type { EmailProvider, PushChannelType } from './types'
+
+export const emailProviders: EmailProvider[] = [
   {
     name: 'Gmail',
     value: 'gmail',
@@ -6,7 +8,8 @@ export const emailProviders = [
     imapPort: 993,
     smtpHost: 'smtp.gmail.com',
     smtpPort: 587,
-    instructions: '需要生成应用专用密码。前往 Google 账户 → 安全性 → 两步验证 → 应用专用密码'
+    instructions: '需要生成应用专用密码。前往 Google 账户 → 安全性 → 两步验证 → 应用专用密码',
+    helpUrl: 'https://support.google.com/accounts/answer/185833'
   },
   {
     name: 'Outlook',
@@ -15,7 +18,8 @@ export const emailProviders = [
     imapPort: 993,
     smtpHost: 'smtp.office365.com',
     smtpPort: 587,
-    instructions: '使用您的 Microsoft 账户密码'
+    instructions: '使用您的 Microsoft 账户密码',
+    helpUrl: 'https://support.microsoft.com/zh-cn/office/pop-imap-smtp-设置-8361e398-8af4-4e97-b147-6c6c4ac95353'
   },
   {
     name: 'QQ Mail',
@@ -24,7 +28,8 @@ export const emailProviders = [
     imapPort: 993,
     smtpHost: 'smtp.qq.com',
     smtpPort: 587,
-    instructions: '需要生成授权码。前往 QQ 邮箱设置 → 账户 → 开启 IMAP/SMTP 服务'
+    instructions: '需要生成授权码。前往 QQ 邮箱设置 → 账户 → 开启 IMAP/SMTP 服务',
+    helpUrl: 'https://service.mail.qq.com/detail/0/310'
   },
   {
     name: '163 Mail',
@@ -33,7 +38,8 @@ export const emailProviders = [
     imapPort: 993,
     smtpHost: 'smtp.163.com',
     smtpPort: 465,
-    instructions: '需要生成授权码。前往网易邮箱设置 → POP3/SMTP/IMAP → 开启服务'
+    instructions: '需要生成授权码。前往网易邮箱设置 → POP3/SMTP/IMAP → 开启服务',
+    helpUrl: 'https://help.mail.163.com/faqDetail.do?code=d7a5dc8471cd0c0e8b4b8f4f8e49998b374173cfe9171305fa1ce630d7f67ac2'
   },
   {
     name: '126 Mail',
@@ -42,7 +48,8 @@ export const emailProviders = [
     imapPort: 993,
     smtpHost: 'smtp.126.com',
     smtpPort: 465,
-    instructions: '需要生成授权码'
+    instructions: '需要生成授权码',
+    helpUrl: 'https://help.mail.163.com/faqDetail.do?code=d7a5dc8471cd0c0e8b4b8f4f8e49998b374173cfe9171305fa1ce630d7f67ac2'
   },
   {
     name: 'iCloud',
@@ -51,7 +58,8 @@ export const emailProviders = [
     imapPort: 993,
     smtpHost: 'smtp.mail.me.com',
     smtpPort: 587,
-    instructions: '需要生成应用专用密码。前往 Apple ID → 安全 → 应用专用密码'
+    instructions: '需要生成应用专用密码。前往 Apple ID → 安全 → 应用专用密码',
+    helpUrl: 'https://support.apple.com/zh-cn/102654'
   },
   {
     name: 'Yahoo',
@@ -60,7 +68,8 @@ export const emailProviders = [
     imapPort: 993,
     smtpHost: 'smtp.mail.yahoo.com',
     smtpPort: 587,
-    instructions: '需要生成应用密码'
+    instructions: '需要生成应用密码',
+    helpUrl: 'https://help.yahoo.com/kb/generate-app-password-sln15241.html'
   },
   {
     name: '自定义',
@@ -73,7 +82,7 @@ export const emailProviders = [
   }
 ]
 
-export const pushChannelTypes = [
+export const pushChannelTypes: PushChannelType[] = [
   {
     type: 'wechat',
     name: '企业微信',

@@ -15,6 +15,7 @@ export async function GET(request: Request) {
     const emailAccountId = searchParams.get('emailAccountId')
     const isRead = searchParams.get('isRead')
     const search = searchParams.get('search')
+    const dateRange = searchParams.get('dateRange')
     const limit = parseInt(searchParams.get('limit') || '50')
     const offset = parseInt(searchParams.get('offset') || '0')
 
@@ -28,8 +29,22 @@ export async function GET(request: Request) {
     if (search) {
       where.OR = [
         { subject: { contains: search } },
-        { fromAddress: { contains: search } }
+        { fromAddress: { contains: search } },
+        { body: { contains: search } }
       ]
+    }
+    if (dateRange) {
+      const now = new Date()
+      now.setHours(0, 0, 0, 0)
+      if (dateRange === 'today') {
+        where.receivedAt = { gte: now }
+      } else if (dateRange === '7days') {
+        now.setDate(now.getDate() - 7)
+        where.receivedAt = { gte: now }
+      } else if (dateRange === '30days') {
+        now.setDate(now.getDate() - 30)
+        where.receivedAt = { gte: now }
+      }
     }
 
     const [emails, total] = await Promise.all([

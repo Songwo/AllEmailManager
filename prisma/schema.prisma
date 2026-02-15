@@ -60,6 +60,7 @@ model EmailAccount {
   encryptedPassword String
   isActive          Boolean   @default(true)
   lastSyncAt        DateTime?
+  lastHeartbeatAt   DateTime?
   status            String    @default("connected")
   errorMessage      String?
   emails            Email[]

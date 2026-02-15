@@ -84,6 +84,7 @@ export async function GET(request: Request) {
         smtpPort: true,
         isActive: true,
         lastSyncAt: true,
+        lastHeartbeatAt: true,
         status: true,
         errorMessage: true,
         createdAt: true,

@@ -1,29 +1,37 @@
 import { EmailListener } from './email-listener'
+import { createLogger } from './logger'
 import { prisma } from './prisma'
+
+const log = createLogger('listener-manager')
 
 class ListenerManager {
   private listeners: Map<string, EmailListener> = new Map()
   private healthCheckInterval: NodeJS.Timeout | null = null
+  private _initialized = false
 
   async startAll() {
-    // Get all active email accounts
+    if (this._initialized) return
+    this._initialized = true
+
     const accounts = await prisma.emailAccount.findMany({
       where: { isActive: true },
       include: { user: true }
     })
 
-    console.log(`Starting ${accounts.length} email listeners...`)
+    log.info(`Auto-starting ${accounts.length} email listener(s)`)
 
     for (const account of accounts) {
-      await this.start(account.id, account.userId)
+      try {
+        await this.start(account.id, account.userId)
+      } catch (error) {
+        log.error(`Failed to auto-start listener for ${account.email}`, { error: String(error) })
+      }
     }
 
-    // Start health check
     this.startHealthCheck()
   }
 
   async start(accountId: string, userId: string) {
-    // Stop existing listener if any
     this.stop(accountId)
 
     const listener = new EmailListener(accountId, userId)
@@ -31,9 +39,9 @@ class ListenerManager {
 
     try {
       await listener.start()
-      console.log(`[${accountId}] Listener started`)
+      log.info('Listener started', { accountId })
     } catch (error) {
-      console.error(`[${accountId}] Failed to start listener:`, error)
+      log.error('Failed to start listener', { accountId, error: String(error) })
       this.listeners.delete(accountId)
     }
   }
@@ -43,16 +51,17 @@ class ListenerManager {
     if (listener) {
       listener.stop()
       this.listeners.delete(accountId)
-      console.log(`[${accountId}] Listener stopped`)
+      log.info('Listener stopped', { accountId })
     }
   }
 
   stopAll() {
-    console.log(`Stopping ${this.listeners.size} listeners...`)
-    for (const [accountId, listener] of this.listeners) {
+    log.info(`Stopping ${this.listeners.size} listener(s)`)
+    for (const [, listener] of this.listeners) {
       listener.stop()
     }
     this.listeners.clear()
+    this._initialized = false
 
     if (this.healthCheckInterval) {
       clearInterval(this.healthCheckInterval)
@@ -61,51 +70,96 @@ class ListenerManager {
   }
 
   getStatus(accountId: string): 'running' | 'stopped' {
-    return this.listeners.has(accountId) ? 'running' : 'stopped'
+    const listener = this.listeners.get(accountId)
+    return listener?.isRunning ? 'running' : 'stopped'
   }
 
-  getAllStatus(): Record<string, 'running' | 'stopped'> {
-    const status: Record<string, 'running' | 'stopped'> = {}
-    for (const accountId of this.listeners.keys()) {
-      status[accountId] = 'running'
+  getDetailedStatus(accountId: string): { status: 'running' | 'stopped'; connected: boolean; mode: string; pollInterval: number } {
+    const listener = this.listeners.get(accountId)
+    if (!listener) return { status: 'stopped', connected: false, mode: 'unknown', pollInterval: 0 }
+    return {
+      status: listener.isRunning ? 'running' : 'stopped',
+      connected: listener.isConnected,
+      mode: listener.supportsIdle ? 'idle' : 'poll',
+      pollInterval: listener.currentPollInterval
     }
-    return status
+  }
+
+  getAllStatus(): Record<string, { status: 'running' | 'stopped'; mode: string; pollInterval: number }> {
+    const result: Record<string, { status: 'running' | 'stopped'; mode: string; pollInterval: number }> = {}
+    for (const [accountId, listener] of this.listeners) {
+      result[accountId] = {
+        status: listener.isRunning ? 'running' : 'stopped',
+        mode: listener.supportsIdle ? 'idle' : 'poll',
+        pollInterval: listener.currentPollInterval
+      }
+    }
+    return result
+  }
+
+  setPollingInterval(accountId: string, intervalMs: number) {
+    const listener = this.listeners.get(accountId)
+    if (listener) {
+      listener.setPollingInterval(intervalMs)
+    }
   }
 
   private startHealthCheck() {
-    // Check every 5 minutes
+    if (this.healthCheckInterval) return
+
     this.healthCheckInterval = setInterval(async () => {
-      console.log('[HealthCheck] Running health check...')
+      log.debug('Running health check')
 
-      const accounts = await prisma.emailAccount.findMany({
-        where: { isActive: true },
-        include: { user: true }
-      })
+      try {
+        const accounts = await prisma.emailAccount.findMany({
+          where: { isActive: true },
+          include: { user: true }
+        })
 
-      for (const account of accounts) {
-        const isRunning = this.listeners.has(account.id)
+        for (const account of accounts) {
+          const listener = this.listeners.get(account.id)
+          const isRunning = listener?.isRunning ?? false
 
-        if (!isRunning) {
-          console.log(`[HealthCheck] Restarting listener for ${account.email}`)
-          await this.start(account.id, account.userId)
+          if (!isRunning) {
+            log.info('Restarting listener', { email: account.email })
+            await this.start(account.id, account.userId)
+          }
         }
+
+        for (const [accountId] of this.listeners) {
+          const account = accounts.find(a => a.id === accountId)
+          if (!account) {
+            log.info('Stopping orphan listener', { accountId })
+            this.stop(accountId)
+          }
+        }
+      } catch (error) {
+        log.error('Health check error', { error: String(error) })
       }
-    }, 5 * 60 * 1000)
+    }, 3 * 60 * 1000)
   }
 }
 
-// Singleton instance
-export const listenerManager = new ListenerManager()
+// Use globalThis singleton pattern (same approach as prisma.ts) to survive HMR in dev
+const globalForListeners = globalThis as unknown as {
+  listenerManager: ListenerManager | undefined
+}
+
+export const listenerManager = globalForListeners.listenerManager ?? new ListenerManager()
+
+if (process.env.NODE_ENV !== 'production') {
+  globalForListeners.listenerManager = listenerManager
+}
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
-  console.log('SIGTERM received, stopping all listeners...')
+  log.info('SIGTERM received, stopping all listeners')
   listenerManager.stopAll()
   process.exit(0)
 })
 
 process.on('SIGINT', () => {
-  console.log('SIGINT received, stopping all listeners...')
+  log.info('SIGINT received, stopping all listeners')
   listenerManager.stopAll()
   process.exit(0)
 })

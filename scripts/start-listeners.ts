@@ -2,7 +2,9 @@
 
 /**
  * Email listener bootstrap script.
- * Starts listeners for all active and connected accounts.
+ * Starts listeners for all active accounts.
+ * This can be run as a standalone process or the listeners will auto-start
+ * via instrumentation.ts when the Next.js server boots.
  */
 
 import { prisma } from '../lib/prisma'
@@ -13,18 +15,16 @@ async function startAllListeners() {
     console.log('Starting email listener service...')
 
     const accounts = await prisma.emailAccount.findMany({
-      where: {
-        isActive: true,
-        status: 'connected'
-      },
+      where: { isActive: true },
       select: {
         id: true,
         email: true,
-        userId: true
+        userId: true,
+        status: true
       }
     })
 
-    console.log(`Found ${accounts.length} active email accounts`)
+    console.log(`Found ${accounts.length} active email account(s)`)
 
     for (const account of accounts) {
       try {
@@ -37,6 +37,7 @@ async function startAllListeners() {
     }
 
     console.log('Email listener service started successfully')
+    console.log('Press Ctrl+C to stop')
   } catch (error: unknown) {
     console.error('Failed to start email listener service:', error)
     process.exit(1)

@@ -1,7 +1,7 @@
 'use client'
 
-import { motion } from 'framer-motion'
-import { Mail, Plus, Trash2, Power, AlertCircle, CheckCircle, Loader2, Play, Square, RefreshCw } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Mail, Plus, Trash2, Power, AlertCircle, CheckCircle, Loader2, Play, Square, RefreshCw, Wifi, WifiOff, Clock, Activity } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
 import { api } from '@/lib/api-client'
 import { emailProviders } from '@/lib/constants'
@@ -16,10 +16,30 @@ interface EmailAccount {
   smtpPort: number | null
   isActive: boolean
   lastSyncAt: string | null
+  lastHeartbeatAt: string | null
   status: string
   errorMessage: string | null
   createdAt: string
   _count: { emails: number }
+}
+
+interface DiagStep {
+  name: string
+  status: 'success' | 'error' | 'skipped'
+  message: string
+  duration: number
+}
+
+interface DiagResult {
+  steps: DiagStep[]
+  overall: 'success' | 'error'
+  suggestion: string
+}
+
+interface ListenerInfo {
+  status: 'running' | 'stopped'
+  mode: string
+  pollInterval: number
 }
 
 export default function EmailAccounts() {
@@ -28,6 +48,15 @@ export default function EmailAccounts() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+
+  // Test connection state
+  const [testingId, setTestingId] = useState<string | null>(null)
+  const [diagResult, setDiagResult] = useState<DiagResult | null>(null)
+  const [diagAccountId, setDiagAccountId] = useState<string | null>(null)
+
+  // Listener runtime info (mode, pollInterval)
+  const [listenerInfo, setListenerInfo] = useState<Record<string, ListenerInfo>>({})
+  const [settingInterval, setSettingInterval] = useState<string | null>(null)
 
   // Form state
   const [formData, setFormData] = useState({
@@ -51,9 +80,19 @@ export default function EmailAccounts() {
     }
   }, [])
 
+  const fetchListenerInfo = useCallback(async () => {
+    try {
+      const data = await api.get<{ listeners: Record<string, ListenerInfo> }>('/api/listener')
+      setListenerInfo(data.listeners || {})
+    } catch {
+      // 静默失败，不影响主界面
+    }
+  }, [])
+
   useEffect(() => {
     fetchAccounts()
-  }, [fetchAccounts])
+    fetchListenerInfo()
+  }, [fetchAccounts, fetchListenerInfo])
 
   const handleProviderChange = (providerValue: string) => {
     const provider = emailProviders.find(p => p.value === providerValue)
@@ -101,6 +140,10 @@ export default function EmailAccounts() {
         id: account.id,
         isActive: !account.isActive
       })
+      // If deactivating, also stop the listener
+      if (account.isActive) {
+        await api.post('/api/listener', { accountId: account.id, action: 'stop' }).catch(() => {})
+      }
       await fetchAccounts()
     } catch (err: any) {
       console.error('Toggle failed:', err)
@@ -110,7 +153,12 @@ export default function EmailAccounts() {
   const handleDelete = async (id: string) => {
     if (!confirm('确定要删除此邮箱账户吗？所有相关邮件也会被删除。')) return
     try {
+      await api.post('/api/listener', { accountId: id, action: 'stop' }).catch(() => {})
       await api.delete(`/api/email-accounts?id=${id}`)
+      if (diagAccountId === id) {
+        setDiagResult(null)
+        setDiagAccountId(null)
+      }
       await fetchAccounts()
     } catch (err: any) {
       console.error('Delete failed:', err)
@@ -121,8 +169,71 @@ export default function EmailAccounts() {
     try {
       await api.post('/api/listener', { accountId, action })
       await fetchAccounts()
+      await fetchListenerInfo()
     } catch (err: any) {
       console.error('Listener action failed:', err)
+    }
+  }
+
+  const handleTestConnection = async (accountId: string) => {
+    setTestingId(accountId)
+    setDiagResult(null)
+    setDiagAccountId(accountId)
+
+    try {
+      const result = await api.post<DiagResult>(`/api/email-accounts/${accountId}/test`)
+      setDiagResult(result)
+      await fetchAccounts()
+      await fetchListenerInfo()
+    } catch (err: any) {
+      setDiagResult({
+        steps: [{ name: '诊断请求', status: 'error', message: err.message || '请求失败', duration: 0 }],
+        overall: 'error',
+        suggestion: '无法执行诊断，请检查服务器状态。'
+      })
+    } finally {
+      setTestingId(null)
+    }
+  }
+
+  const handleSetInterval = async (accountId: string, intervalMs: number) => {
+    setSettingInterval(accountId)
+    try {
+      await api.post('/api/listener', { accountId, action: 'setInterval', interval: intervalMs })
+      await fetchListenerInfo()
+    } catch (err: any) {
+      console.error('Set interval failed:', err)
+    } finally {
+      setSettingInterval(null)
+    }
+  }
+
+  const formatRelativeTime = (dateStr: string | null) => {
+    if (!dateStr) return '从未'
+    const date = new Date(dateStr)
+    const now = new Date()
+    const diffMs = now.getTime() - date.getTime()
+    const diffSec = Math.floor(diffMs / 1000)
+    const diffMin = Math.floor(diffMs / 60000)
+    const diffHour = Math.floor(diffMs / 3600000)
+
+    if (diffSec < 60) return `${diffSec}秒前`
+    if (diffMin < 60) return `${diffMin}分钟前`
+    if (diffHour < 24) return `${diffHour}小时前`
+    return date.toLocaleString('zh-CN')
+  }
+
+  const getStatusConfig = (account: EmailAccount) => {
+    switch (account.status) {
+      case 'connected':
+        return { icon: CheckCircle, label: '已连接', color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-500/10' }
+      case 'connecting':
+        return { icon: Loader2, label: '连接中...', color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-500/10' }
+      case 'error':
+        return { icon: AlertCircle, label: '连接失败', color: 'text-destructive', bg: 'bg-destructive/10' }
+      case 'disconnected':
+      default:
+        return { icon: WifiOff, label: '已断开', color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-500/10' }
     }
   }
 
@@ -136,7 +247,7 @@ export default function EmailAccounts() {
             邮箱管理
           </h1>
           <p className="text-muted-foreground">
-            添加和管理您的邮箱账户
+            添加和管理您的邮箱账户，监听会在服务启动时自动恢复
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -181,105 +292,230 @@ export default function EmailAccounts() {
         </div>
       ) : (
         <div className="grid gap-6">
-          {accounts.map((account, index) => (
-            <motion.div
-              key={account.id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.1 }}
-              className={`bg-background rounded-2xl border p-6 transition-all ${account.isActive ? 'border-border hover:border-primary/50' : 'border-border/50 opacity-60'
-                }`}
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex items-start gap-4 flex-1">
-                  <div className={`w-14 h-14 rounded-xl flex items-center justify-center ${account.status === 'connected'
-                      ? 'bg-primary/10 text-primary'
-                      : 'bg-destructive/10 text-destructive'
+          {accounts.map((account, index) => {
+            const statusConfig = getStatusConfig(account)
+            const StatusIcon = statusConfig.icon
+            const info = listenerInfo[account.id]
+
+            return (
+              <motion.div
+                key={account.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.1 }}
+                className={`bg-background rounded-2xl border p-6 transition-all ${account.isActive ? 'border-border hover:border-primary/50' : 'border-border/50 opacity-60'
+                  }`}
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex items-start gap-4 flex-1">
+                    <div className={`w-14 h-14 rounded-xl flex items-center justify-center ${
+                      account.status === 'connected'
+                        ? 'bg-primary/10 text-primary'
+                        : account.status === 'connecting'
+                          ? 'bg-blue-500/10 text-blue-500'
+                          : 'bg-destructive/10 text-destructive'
                     }`}>
-                    <Mail className="w-7 h-7" />
-                  </div>
-
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      <h3 className="text-xl font-semibold">
-                        {account.email}
-                      </h3>
-                      {account.status === 'connected' ? (
-                        <span className="flex items-center gap-1 px-3 py-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-full text-sm">
-                          <CheckCircle className="w-4 h-4" />
-                          已连接
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-1 px-3 py-1 bg-destructive/10 text-destructive rounded-full text-sm">
-                          <AlertCircle className="w-4 h-4" />
-                          {account.status === 'error' ? '连接失败' : account.status}
-                        </span>
-                      )}
-                      {!account.isActive && (
-                        <span className="px-3 py-1 bg-secondary text-muted-foreground rounded-full text-sm">
-                          已禁用
-                        </span>
-                      )}
+                      <Mail className="w-7 h-7" />
                     </div>
 
-                    <div className="flex items-center gap-6 text-sm text-muted-foreground">
-                      <span>提供商: {account.provider}</span>
-                      <span>邮件数: {account._count?.emails ?? 0}</span>
-                      <span>
-                        最后同步: {account.lastSyncAt
-                          ? new Date(account.lastSyncAt).toLocaleString('zh-CN')
-                          : '从未同步'}
-                      </span>
-                    </div>
-
-                    {account.errorMessage && (
-                      <div className="mt-3 px-4 py-2 bg-destructive/10 border border-destructive/20 rounded-lg text-sm text-destructive font-medium">
-                        {account.errorMessage}
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-2">
+                        <h3 className="text-xl font-semibold">
+                          {account.email}
+                        </h3>
+                        <span className={`flex items-center gap-1 px-3 py-1 ${statusConfig.bg} ${statusConfig.color} rounded-full text-sm`}>
+                          <StatusIcon className={`w-4 h-4 ${account.status === 'connecting' ? 'animate-spin' : ''}`} />
+                          {statusConfig.label}
+                        </span>
+                        {!account.isActive && (
+                          <span className="px-3 py-1 bg-secondary text-muted-foreground rounded-full text-sm">
+                            已禁用
+                          </span>
+                        )}
                       </div>
-                    )}
+
+                      <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm text-muted-foreground">
+                        <span>提供商: {account.provider}</span>
+                        <span>邮件数: {account._count?.emails ?? 0}</span>
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-3.5 h-3.5" />
+                          最后同步: {formatRelativeTime(account.lastSyncAt)}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Activity className="w-3.5 h-3.5" />
+                          心跳: {formatRelativeTime(account.lastHeartbeatAt)}
+                        </span>
+                        {info && info.status === 'running' && (
+                          <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                            info.mode === 'idle'
+                              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                              : 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
+                          }`}>
+                            {info.mode === 'idle' ? 'IDLE 实时' : `轮询 ${info.pollInterval / 1000}s`}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* 轮询间隔调节（仅 poll 模式 + 运行中） */}
+                      {info && info.status === 'running' && info.mode === 'poll' && (
+                        <div className="mt-2 flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">轮询间隔:</span>
+                          {[
+                            { label: '15s', ms: 15000 },
+                            { label: '30s', ms: 30000 },
+                            { label: '45s', ms: 45000 },
+                            { label: '60s', ms: 60000 },
+                          ].map(opt => (
+                            <button
+                              key={opt.ms}
+                              disabled={settingInterval === account.id}
+                              onClick={() => handleSetInterval(account.id, opt.ms)}
+                              className={`px-2 py-0.5 text-xs rounded-md border transition-colors ${
+                                info.pollInterval === opt.ms
+                                  ? 'bg-primary text-primary-foreground border-primary'
+                                  : 'border-border text-muted-foreground hover:bg-muted/50'
+                              }`}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {account.errorMessage && (
+                        <div className="mt-3 px-4 py-2 bg-destructive/10 border border-destructive/20 rounded-lg text-sm text-destructive font-medium">
+                          {account.errorMessage}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <motion.button
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                      onClick={() => handleTestConnection(account.id)}
+                      disabled={testingId === account.id}
+                      title="测试连接"
+                      className="p-2 hover:bg-blue-500/10 rounded-lg transition-colors text-blue-600 dark:text-blue-400 disabled:opacity-50"
+                    >
+                      {testingId === account.id ? (
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                      ) : (
+                        <Wifi className="w-5 h-5" />
+                      )}
+                    </motion.button>
+                    <motion.button
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                      onClick={() => handleListener(account.id, 'start')}
+                      title="启动监听"
+                      className="p-2 hover:bg-emerald-500/10 rounded-lg transition-colors text-emerald-600 dark:text-emerald-400"
+                    >
+                      <Play className="w-5 h-5" />
+                    </motion.button>
+                    <motion.button
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                      onClick={() => handleListener(account.id, 'stop')}
+                      title="停止监听"
+                      className="p-2 hover:bg-amber-500/10 rounded-lg transition-colors text-amber-600 dark:text-amber-400"
+                    >
+                      <Square className="w-4 h-4" />
+                    </motion.button>
+                    <motion.button
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                      onClick={() => handleToggleActive(account)}
+                      title={account.isActive ? '禁用' : '启用'}
+                      className="p-2 hover:bg-secondary rounded-lg transition-colors text-muted-foreground"
+                    >
+                      <Power className="w-5 h-5" />
+                    </motion.button>
+                    <motion.button
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                      onClick={() => handleDelete(account.id)}
+                      className="p-2 hover:bg-destructive/10 rounded-lg transition-colors text-destructive"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </motion.button>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <motion.button
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
-                    onClick={() => handleListener(account.id, 'start')}
-                    title="启动监听"
-                    className="p-2 hover:bg-emerald-500/10 rounded-lg transition-colors text-emerald-600 dark:text-emerald-400"
-                  >
-                    <Play className="w-5 h-5" />
-                  </motion.button>
-                  <motion.button
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
-                    onClick={() => handleListener(account.id, 'stop')}
-                    title="停止监听"
-                    className="p-2 hover:bg-amber-500/10 rounded-lg transition-colors text-amber-600 dark:text-amber-400"
-                  >
-                    <Square className="w-4 h-4" />
-                  </motion.button>
-                  <motion.button
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
-                    onClick={() => handleToggleActive(account)}
-                    title={account.isActive ? '禁用' : '启用'}
-                    className="p-2 hover:bg-secondary rounded-lg transition-colors text-muted-foreground"
-                  >
-                    <Power className="w-5 h-5" />
-                  </motion.button>
-                  <motion.button
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
-                    onClick={() => handleDelete(account.id)}
-                    className="p-2 hover:bg-destructive/10 rounded-lg transition-colors text-destructive"
-                  >
-                    <Trash2 className="w-5 h-5" />
-                  </motion.button>
-                </div>
-              </div>
-            </motion.div>
-          ))}
+                {/* Diagnostic Results Panel */}
+                <AnimatePresence>
+                  {diagAccountId === account.id && diagResult && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="mt-4 pt-4 border-t border-border">
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="text-sm font-semibold">连接诊断结果</h4>
+                          <button
+                            onClick={() => { setDiagResult(null); setDiagAccountId(null) }}
+                            className="text-xs text-muted-foreground hover:text-foreground"
+                          >
+                            关闭
+                          </button>
+                        </div>
+
+                        <div className="space-y-2">
+                          {diagResult.steps.map((step, i) => (
+                            <div
+                              key={i}
+                              className={`flex items-start gap-3 px-3 py-2 rounded-lg text-sm ${
+                                step.status === 'success'
+                                  ? 'bg-emerald-500/5'
+                                  : step.status === 'error'
+                                    ? 'bg-destructive/5'
+                                    : 'bg-muted/30'
+                              }`}
+                            >
+                              <div className="mt-0.5 flex-shrink-0">
+                                {step.status === 'success' ? (
+                                  <CheckCircle className="w-4 h-4 text-emerald-500" />
+                                ) : step.status === 'error' ? (
+                                  <AlertCircle className="w-4 h-4 text-destructive" />
+                                ) : (
+                                  <div className="w-4 h-4 rounded-full border-2 border-muted-foreground/30" />
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium">{step.name}</span>
+                                  {step.duration > 0 && (
+                                    <span className="text-xs text-muted-foreground">{step.duration}ms</span>
+                                  )}
+                                </div>
+                                <p className="text-muted-foreground text-xs mt-0.5 break-all">
+                                  {step.message}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {diagResult.suggestion && (
+                          <div className={`mt-3 px-4 py-3 rounded-lg text-sm ${
+                            diagResult.overall === 'success'
+                              ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                              : 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                          }`}>
+                            {diagResult.suggestion}
+                          </div>
+                        )}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </motion.div>
+            )
+          })}
         </div>
       )}
 
@@ -331,7 +567,7 @@ export default function EmailAccounts() {
                 </select>
                 {selectedProvider?.instructions && (
                   <p className="mt-2 text-sm text-muted-foreground">
-                    💡 {selectedProvider.instructions}
+                    {selectedProvider.instructions}
                   </p>
                 )}
               </div>

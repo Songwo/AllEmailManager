@@ -1,45 +1,71 @@
 # EmailHub
 
-EmailHub is a Next.js + Prisma email management platform for multi-account inbox aggregation, filtering, and push notifications.
+多邮箱聚合管理平台 —— 基于 Next.js 16 + Prisma + SQLite，支持 IMAP 实时监听、关键词过滤、飞书/企业微信/Telegram 推送。
 
-This branch includes a non-breaking structure cleanup and deployment hardening pass focused on:
-- documentation consolidation,
-- safer Docker deployment aligned with current runtime behavior,
-- archival (not deletion) of low-value report files with reference-check evidence.
+## 功能概览
 
-## Table of Contents
+- **多邮箱聚合**：同时管理 Gmail、Outlook、QQ、163、126、iCloud、Yahoo 等邮箱
+- **实时监听**：后端常驻 IMAP 连接，IDLE + UID 轮询双通道新邮件检测
+- **智能推送**：新邮件自动推送至飞书、企业微信、Telegram
+- **过滤规则**：按发件人、主题、关键词配置优先级过滤，匹配后触发推送
+- **连接诊断**：DNS → TCP → TLS → IMAP 认证 → IDLE 能力逐步诊断
+- **邮件搜索**：关键词搜索（主题/发件人/正文）+ 时间范围 + 账户筛选
+- **邮件发送**：通过 SMTP 直接发送/回复邮件
+- **安全**：AES 加密存储邮箱密码，JWT 认证，可选 2FA
 
-1. [Current Runtime Facts](#current-runtime-facts)
-2. [Quick Start (Local)](#quick-start-local)
-3. [Environment Variables](#environment-variables)
-4. [Detailed Deployment](#detailed-deployment)
-5. [Docker Deployment (Recommended for Reproducibility)](#docker-deployment-recommended-for-reproducibility)
-6. [Database Operations, Backup, and Rollback](#database-operations-backup-and-rollback)
-7. [Security Checklist](#security-checklist)
-8. [Troubleshooting](#troubleshooting)
-9. [Repository Structure](#repository-structure)
-10. [Archived Documents](#archived-documents)
+## 技术栈
 
-## Current Runtime Facts
+| 层 | 技术 |
+|---|---|
+| 前端 | Next.js 16 App Router, React 19, Tailwind CSS 4, Framer Motion |
+| 后端 | Next.js API Routes, Node.js IMAP/SMTP |
+| 数据库 | SQLite (better-sqlite3) + Prisma ORM |
+| 认证 | JWT (HMAC-SHA256), 可选 TOTP 2FA |
+| 推送 | 飞书/企业微信 Webhook, Telegram Bot API |
+| 部署 | Docker multi-stage / PM2 + Nginx |
 
-Before deploying, align with how the code actually runs today:
+## 目录结构
 
-- Prisma client is created through `@prisma/adapter-better-sqlite3` in `lib/prisma.ts`.
-- Runtime database file is `dev.db` under process working directory.
-- Current app runtime does **not** use PostgreSQL even if `DATABASE_URL` is set to a Postgres URL.
-- Because of the above, the default production-safe path for this repository state is **SQLite with persistent volume**.
+```
+email-manager/
+├── app/                        # Next.js App Router
+│   ├── api/                    # API 路由
+│   │   ├── emails/             # 邮件 CRUD + 搜索
+│   │   ├── email-accounts/     # 邮箱账户管理 + 连接诊断
+│   │   ├── listener/           # 监听器控制 (start/stop/status)
+│   │   ├── events/             # SSE 实时事件推送
+│   │   └── ...
+│   └── dashboard/              # 前端页面
+├── lib/                        # 核心模块
+│   ├── email-listener.ts       # IMAP 监听器 (IDLE + UID 轮询)
+│   ├── listener-manager.ts     # 监听器生命周期管理
+│   ├── email-service.ts        # SMTP 邮件发送服务
+│   ├── upload-service.ts       # 文件上传服务
+│   ├── logger.ts               # 结构化日志模块
+│   ├── types.ts                # 共享 TypeScript 类型
+│   ├── constants.ts            # 邮箱供应商 / 推送渠道配置
+│   ├── notifications.ts        # 站内通知
+│   ├── auth.ts                 # JWT 认证
+│   ├── encryption.ts           # AES 密码加解密
+│   ├── prisma.ts               # Prisma 客户端单例
+│   └── env.ts                  # 环境变量校验 (Zod)
+├── prisma/
+│   ├── schema.prisma           # 数据模型
+│   └── migrations/             # 数据库迁移文件
+├── instrumentation.ts          # Next.js 启动钩子 (自动启动监听器)
+├── Dockerfile                  # 多阶段 Docker 构建
+├── docker-compose.yml          # Docker Compose 编排
+└── scripts/                    # 运维脚本
+```
 
-If you want PostgreSQL runtime, that is a separate refactor (switch `lib/prisma.ts` and datasource strategy), and is intentionally out of scope for this non-breaking cleanup.
+## 快速开始
 
-## Quick Start (Local)
-
-### Prerequisites
+### 前置要求
 
 - Node.js 20+
 - npm 10+
-- Git
 
-### 1) Clone and install
+### 1. 克隆并安装
 
 ```bash
 git clone <your-repo-url>
@@ -47,222 +73,194 @@ cd email-manager
 npm install
 ```
 
-### 2) Configure environment
+### 2. 配置环境变量
 
 ```bash
 cp .env.example .env
 ```
 
-Required values in `.env`:
+编辑 `.env`，填入以下必需项：
 
 ```env
-NEXTAUTH_SECRET="replace-with-random-string"
+DATABASE_URL="file:./dev.db"
+NEXTAUTH_SECRET="<至少32位随机字符串>"
 NEXTAUTH_URL="http://localhost:3000"
-ENCRYPTION_KEY="32-char-hex-key"
+ENCRYPTION_KEY="<32位十六进制密钥>"
 ```
 
-Generate secure values:
+生成安全值：
 
 ```bash
 openssl rand -base64 32   # NEXTAUTH_SECRET
-openssl rand -hex 16      # ENCRYPTION_KEY (32 hex chars)
+openssl rand -hex 16      # ENCRYPTION_KEY (32 位 hex)
 ```
 
-### 3) Initialize database
+### 3. 初始化数据库
 
 ```bash
-npm run db:generate
-npm run db:push
+npx prisma generate
+npx prisma migrate dev
 ```
 
-### 4) Start app
+> 如果是已有数据库（通过 `db push` 创建），运行 `npx prisma migrate resolve --applied 20260215000000_init` 标记基线迁移。
+
+### 4. 启动开发服务器
 
 ```bash
 npm run dev
 ```
 
-Open `http://localhost:3000`.
+打开 `http://localhost:3000`，注册账户后添加邮箱。
 
-## Environment Variables
+## 环境变量
 
-| Variable | Required | Example | Notes |
-| --- | --- | --- | --- |
-| `NEXTAUTH_SECRET` | Yes | `base64-random` | Minimum 32 random characters recommended. |
-| `NEXTAUTH_URL` | Yes | `http://localhost:3000` | External URL of the app. |
-| `ENCRYPTION_KEY` | Yes | `32-hex-chars` | Used for stored credential encryption. |
-| `NODE_ENV` | Recommended | `production` | Set automatically in Docker image. |
-| `DATABASE_URL` | Optional in current runtime | `file:./dev.db` | Kept for compatibility; runtime currently uses SQLite adapter in code. |
-| `REDIS_HOST` / `REDIS_PORT` | Optional | `redis` / `6379` | Only if your current features actively require Redis integration. |
+| 变量 | 必需 | 说明 |
+|---|---|---|
+| `DATABASE_URL` | 是 | SQLite 路径，默认 `file:./dev.db` |
+| `NEXTAUTH_SECRET` | 是 | JWT 签名密钥，至少 32 字符 |
+| `NEXTAUTH_URL` | 是 | 应用外部访问 URL |
+| `ENCRYPTION_KEY` | 是 | AES 加密密钥，32 位 hex |
+| `NODE_ENV` | 建议 | `development` / `production` |
+| `LOG_LEVEL` | 可选 | 日志级别：`debug` / `info` / `warn` / `error` |
+| `UPLOAD_DIR` | 可选 | 附件上传目录，默认 `./uploads` |
+| `MAX_UPLOAD_SIZE` | 可选 | 最大上传大小(字节)，默认 `10485760` (10MB) |
 
-## Detailed Deployment
+## 部署
 
-### Option A: Bare-metal / VM (PM2 + Nginx)
+### 方式 A：Docker（推荐）
 
-1. Install Node.js 20 and PM2.
-2. Deploy source code to target host.
-3. Run:
+```bash
+# 构建并启动
+docker compose up -d --build
+
+# 查看日志
+docker compose logs -f app
+
+# 停止
+docker compose down
+```
+
+Docker 特性：
+- 多阶段构建，最终镜像仅包含运行时依赖
+- 启动时自动执行 `prisma db push` 同步 schema
+- SQLite 数据通过 Docker volume (`emailhub_data`) 持久化
+- 非 root 用户运行，健康检查配置
+
+### 方式 B：裸机 / VM (PM2)
 
 ```bash
 npm ci
-npm run db:generate
-npm run db:push
+npx prisma generate
+npx prisma migrate deploy    # 生产环境使用 migrate deploy
 npm run build
 pm2 start npm --name emailhub -- start
 pm2 save
 ```
 
-4. Place Nginx in front of `localhost:3000` and terminate TLS with Let's Encrypt.
+配合 Nginx 反向代理终止 TLS：
 
-### Option B: Docker (recommended below)
+```nginx
+server {
+    listen 443 ssl;
+    server_name your-domain.com;
 
-Use the provided `Dockerfile` + `docker-compose.yml`. This is the safest reproducible path for the current codebase.
+    ssl_certificate     /path/to/cert.pem;
+    ssl_certificate_key /path/to/key.pem;
 
-## Docker Deployment (Recommended for Reproducibility)
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
 
-### Why this Docker setup
+## 架构要点
 
-- Multi-stage build for smaller runtime image.
-- Startup process performs safe schema sync (`prisma db push`) before serving traffic.
-- SQLite database persisted through Docker volume.
-- Non-root container user.
+### 邮件监听
 
-### 1) Build and start
+```
+服务启动 (instrumentation.ts)
+  └→ listenerManager.startAll()
+       └→ 对每个活跃邮箱创建 EmailListener
+            ├→ IMAP 连接 + TLS
+            ├→ 打开 INBOX, 获取 UIDNEXT 水位线
+            ├→ 首次 UNSEEN 抓取
+            ├→ UID 轮询 (30-60s, 核心机制)
+            │    └→ SEARCH UID (lastSeenUid+1):*
+            └→ IDLE 加速 (如果支持)
+                 └→ mail 事件 → 立即触发一次轮询
+```
+
+- **UID 轮询**是所有邮箱的通用机制，不依赖 UNSEEN/IDLE/时间戳
+- **动态频率调节**：有新邮件 → 30s，连续空轮询 5 次 → 45s，10 次 → 60s
+- **IDLE 是可选加速器**：163 等不支持 IDLE 的邮箱依靠纯轮询
+- **健康检查**：每 3 分钟自动检查，重启异常停止的监听器
+- **心跳**：每 60s 更新 `lastHeartbeatAt`，用于前端状态展示
+
+### 推送流程
+
+```
+新邮件保存 → 匹配过滤规则 → 查找关联推送通道 → 频率限制检查 → 推送
+```
+
+支持飞书互动卡片模板、企业微信 Markdown、Telegram HTML 格式。
+
+## 常用命令
 
 ```bash
-docker compose up -d --build
+# 开发
+npm run dev              # 启动开发服务器
+npm run build            # 构建生产版本
+npm run lint             # ESLint 检查
+
+# 数据库
+npm run db:generate      # 生成 Prisma Client
+npm run db:migrate       # 运行迁移 (开发)
+npm run db:push          # 同步 schema 到数据库
+npm run db:studio        # 打开 Prisma Studio
+
+# 运维
+npm run listeners:start  # 手动启动所有监听器
+npm run health:check     # 健康检查
+npm run db:backup        # 数据库备份
 ```
 
-### 2) Inspect logs
+## 数据库备份
+
+### 本地
 
 ```bash
-docker compose logs -f app
+cp dev.db dev.db.backup
 ```
 
-### 3) Verify app
-
-Open `http://localhost:3000`.
-
-### 4) Stop services
+### Docker
 
 ```bash
-docker compose down
+docker compose exec app sh -c "cp /data/dev.db /data/dev.db.backup.$(date +%Y%m%d%H%M%S)"
 ```
 
-### 5) Stop and remove volumes (destructive)
+## 安全注意事项
 
-```bash
-docker compose down -v
-```
+- 生产环境必须更换 `NEXTAUTH_SECRET` 和 `ENCRYPTION_KEY`
+- 不要提交 `.env` 文件到版本控制
+- 定期运行 `npm audit` 检查依赖安全
+- 建议通过 Nginx/Caddy 终止 TLS
+- 定期备份 SQLite 数据文件
 
-## Database Operations, Backup, and Rollback
+## 故障排除
 
-### SQLite backup (host)
-
-If running locally (non-Docker):
-
-```bash
-copy dev.db dev.db.backup
-```
-
-### SQLite backup (Docker)
-
-```bash
-docker compose exec app sh -lc "cp /data/dev.db /data/dev.db.backup.$(date +%Y%m%d%H%M%S)"
-```
-
-### Rollback strategy for this cleanup branch
-
-- All structural changes are split into small commits.
-- Archived files were moved to `/_archive` instead of deletion.
-- You can rollback one step at a time with `git revert <commit>`.
-
-## Security Checklist
-
-- Do not commit `.env`.
-- Rotate `NEXTAUTH_SECRET` and `ENCRYPTION_KEY` before production.
-- Run dependency audit in CI and before release:
-
-```bash
-npm audit
-```
-
-- Keep backups of SQLite volume.
-- Prefer TLS termination at reverse proxy.
-
-## Troubleshooting
-
-### Docker app starts then exits
-
-Check startup logs:
-
-```bash
-docker compose logs app --tail=200
-```
-
-Most common causes:
-- invalid `.env` values,
-- DB file mount permissions,
-- stale generated Prisma client after dependency updates.
-
-### Prisma mismatch errors
-
-Run:
-
-```bash
-npm run db:generate
-npm run db:push
-```
-
-Then rebuild app or image.
-
-### Build fails in CI but local works
-
-- confirm Node.js major version matches CI (20),
-- ensure lockfile is committed,
-- ensure no hidden local `.env` assumptions.
-
-## Repository Structure
-
-```text
-email-manager/
-  app/                    Next.js app router pages and API routes
-  components/             UI components
-  lib/                    core services and adapters
-  prisma/                 Prisma schema
-  scripts/                utility scripts
-  docs/
-    operations/           operational docs (cleanup evidence, runbooks)
-  _archive/
-    docs/                 archived docs retained for traceability
-  Dockerfile              production container image
-  docker-compose.yml      local/prod-like orchestration (SQLite persistence)
-```
-
-## Archived Documents
-
-The following report-style files were moved from root to keep the top-level clean while preserving history:
-
-- `_archive/docs/reports/FIX_REPORT.md`
-- `_archive/docs/reports/DELIVERY_REPORT.md`
-- `_archive/docs/reports/PROJECT_SUMMARY.md`
-- `_archive/docs/reports/QUICK_REFERENCE.md`
-- `_archive/docs/reports/SHOWCASE.md`
-
-Reference check evidence is documented in:
-- `docs/operations/cleanup-reference-check.md`
-
-## Development Commands
-
-```bash
-npm run dev
-npm run build
-npm run lint
-npm test
-npm run db:generate
-npm run db:push
-npm run listeners:start
-```
+| 问题 | 解决方案 |
+|---|---|
+| Prisma Unknown field 错误 | 删除 `.next/` 目录，运行 `npx prisma generate`，重启开发服务器 |
+| 163 邮箱连接失败 | 确认已开启 IMAP 服务并使用授权码（非登录密码） |
+| Docker 容器启动后退出 | `docker compose logs app --tail=200` 查看日志，通常是 `.env` 配置不正确 |
+| 监听器不自动启动 | 检查 `instrumentation.ts` 存在且账户 `isActive=true` |
+| 邮件搜索无结果 | 搜索匹配 subject/fromAddress/body，确认数据已入库 |
 
 ## License
 
-MIT License. See `LICENSE`.
+MIT
